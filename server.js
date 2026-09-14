@@ -5,7 +5,7 @@ const { TikTokLiveConnection, WebcastEvent } = require("tiktok-live-connector");
 const { GameEngine } = require("./server/gameEngine");
 
 const PORT = process.env.PORT || 3000;
-const JOIN_KEYWORD = "انضم";
+const JOIN_KEYWORD = "اا";
 
 const app = express();
 app.use(express.static("public"));
