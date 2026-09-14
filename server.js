@@ -19,23 +19,32 @@ const engine = new GameEngine(io);
 let tiktokConnection = null;
 let connectedUsername = null;
 
-// tiktok-live-connector v2.x: user fields live under data.user (uniqueId,
-// nickname, profilePictureUrl), not flat on data. See BREAKING.md upstream.
+// tiktok-live-connector v2.x: user fields live under data.user, per the
+// underlying protobuf schema (userId, nickname, profilePicture.urls[],
+// uniqueId). Earlier docs/snippets show a flatter or differently-named
+// shape, so every field here falls back through multiple possible
+// locations rather than trusting a single path.
 function extractUser(data) {
   const user = data.user || {};
+  // uniqueId (the permanent @handle) is the most reliable identity field
+  // across versions; userId can be missing or inconsistent, and using
+  // undefined as a Map key collapses every player into a single entry.
+  const identity =
+    user.uniqueId || user.userId || data.uniqueId || data.userId || null;
   return {
-    userId: user.userId || data.userId,
-    nickname: user.nickname || user.uniqueId || data.nickname || data.uniqueId,
-    // v2.x nests avatar as user.profilePicture.urls[]; older/flat shapes may
-    // expose user.profilePictureUrl or user.profilePictureUrls[] directly,
-    // so check all three.
+    userId: identity,
+    nickname: user.nickname || user.uniqueId || data.nickname || data.uniqueId || identity,
     profilePictureUrl:
       user.profilePictureUrl ||
       (user.profilePicture && user.profilePicture.urls && user.profilePicture.urls[0]) ||
       (user.profilePictureUrls && user.profilePictureUrls[0]) ||
+      data.profilePictureUrl ||
       null,
   };
 }
+
+let loggedSampleChat = false;
+let loggedSampleLike = false;
 
 function connectToTikTok(username) {
   if (tiktokConnection) {
@@ -46,8 +55,14 @@ function connectToTikTok(username) {
     }
   }
 
+  // The published v2.4.4 constructor reads options.processInitialData
+  // internally without guarding against a missing options object, so an
+  // empty object must always be passed as the second argument (passing
+  // nothing throws "Cannot read properties of undefined").
   tiktokConnection = new TikTokLiveConnection(username, {});
   connectedUsername = username;
+  loggedSampleChat = false;
+  loggedSampleLike = false;
 
   tiktokConnection
     .connect()
@@ -61,11 +76,19 @@ function connectToTikTok(username) {
     });
 
   tiktokConnection.on(WebcastEvent.CHAT, (data) => {
+    if (!loggedSampleChat) {
+      loggedSampleChat = true;
+      console.log("SAMPLE CHAT PAYLOAD:", JSON.stringify(data, null, 2));
+    }
     const u = extractUser(data);
     engine.handleChatJoin(u.userId, u.nickname, u.profilePictureUrl, data.comment, JOIN_KEYWORD);
   });
 
   tiktokConnection.on(WebcastEvent.LIKE, (data) => {
+    if (!loggedSampleLike) {
+      loggedSampleLike = true;
+      console.log("SAMPLE LIKE PAYLOAD:", JSON.stringify(data, null, 2));
+    }
     const u = extractUser(data);
     engine.handleLike(u.userId, u.nickname, u.profilePictureUrl, data.likeCount || 1);
   });
