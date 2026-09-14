@@ -46,7 +46,7 @@ function connectToTikTok(username) {
     }
   }
 
-  tiktokConnection = new TikTokLiveConnection(username);
+  tiktokConnection = new TikTokLiveConnection(username, {});
   connectedUsername = username;
 
   tiktokConnection
