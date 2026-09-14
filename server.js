@@ -1,11 +1,11 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const { WebcastPushConnection } = require("tiktok-live-connector");
+const { TikTokLiveConnection, WebcastEvent } = require("tiktok-live-connector");
 const { GameEngine } = require("./server/gameEngine");
 
 const PORT = process.env.PORT || 3000;
-const JOIN_KEYWORD = "السلام";
+const JOIN_KEYWORD = "اا";
 
 const app = express();
 app.use(express.static("public"));
@@ -19,6 +19,24 @@ const engine = new GameEngine(io);
 let tiktokConnection = null;
 let connectedUsername = null;
 
+// tiktok-live-connector v2.x: user fields live under data.user (uniqueId,
+// nickname, profilePictureUrl), not flat on data. See BREAKING.md upstream.
+function extractUser(data) {
+  const user = data.user || {};
+  return {
+    userId: user.userId || data.userId,
+    nickname: user.nickname || user.uniqueId || data.nickname || data.uniqueId,
+    // v2.x nests avatar as user.profilePicture.urls[]; older/flat shapes may
+    // expose user.profilePictureUrl or user.profilePictureUrls[] directly,
+    // so check all three.
+    profilePictureUrl:
+      user.profilePictureUrl ||
+      (user.profilePicture && user.profilePicture.urls && user.profilePicture.urls[0]) ||
+      (user.profilePictureUrls && user.profilePictureUrls[0]) ||
+      null,
+  };
+}
+
 function connectToTikTok(username) {
   if (tiktokConnection) {
     try {
@@ -28,7 +46,7 @@ function connectToTikTok(username) {
     }
   }
 
-  tiktokConnection = new WebcastPushConnection(username);
+  tiktokConnection = new TikTokLiveConnection(username);
   connectedUsername = username;
 
   tiktokConnection
@@ -42,43 +60,36 @@ function connectToTikTok(username) {
       io.emit("tiktok:error", { message: err.message });
     });
 
-  tiktokConnection.on("chat", (data) => {
-    engine.handleChatJoin(
-      data.userId,
-      data.nickname || data.uniqueId,
-      data.profilePictureUrl,
-      data.comment,
-      JOIN_KEYWORD
-    );
+  tiktokConnection.on(WebcastEvent.CHAT, (data) => {
+    const u = extractUser(data);
+    engine.handleChatJoin(u.userId, u.nickname, u.profilePictureUrl, data.comment, JOIN_KEYWORD);
   });
 
-  tiktokConnection.on("like", (data) => {
-    engine.handleLike(
-      data.userId,
-      data.nickname || data.uniqueId,
-      data.profilePictureUrl,
-      data.likeCount || 1
-    );
+  tiktokConnection.on(WebcastEvent.LIKE, (data) => {
+    const u = extractUser(data);
+    engine.handleLike(u.userId, u.nickname, u.profilePictureUrl, data.likeCount || 1);
   });
 
-  tiktokConnection.on("gift", (data) => {
-    // Only count a gift once it's "settled" (for combo-able gifts) or immediately
-    // if it's not a repeatable/combo gift.
-    const isCombo = data.giftType === 1;
+  tiktokConnection.on(WebcastEvent.GIFT, (data) => {
+    const u = extractUser(data);
+    const giftDetails = data.giftDetails || {};
+    // Streakable gifts (giftType === 1) fire repeatedly while the streak is
+    // building; only apply the boost once the streak settles (repeatEnd).
+    const isCombo = giftDetails.giftType === 1;
     if (isCombo && !data.repeatEnd) return;
 
-    const coinValue = (data.diamondCount || 1) * (data.repeatCount || 1);
-    engine.handleGift(
-      data.userId,
-      data.nickname || data.uniqueId,
-      data.profilePictureUrl,
-      coinValue
-    );
+    const coinValue = (giftDetails.diamondCount || 1) * (data.repeatCount || 1);
+    engine.handleGift(u.userId, u.nickname, u.profilePictureUrl, coinValue);
   });
 
-  tiktokConnection.on("disconnect", () => {
+  tiktokConnection.on("disconnected", () => {
     console.log("Disconnected from TikTok live");
     io.emit("tiktok:disconnected", {});
+  });
+
+  tiktokConnection.on("error", (err) => {
+    console.error("TikTok connection error:", err && err.info ? err.info : err);
+    io.emit("tiktok:error", { message: (err && err.info) || "unknown error" });
   });
 }
 
