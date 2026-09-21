@@ -489,6 +489,7 @@
   .btn-connect { background: var(--violet); color: white; }
   .btn-start { background: var(--lime); color: #07050d; }
   .btn-stop { background: var(--ember); color: white; }
+  .admin button.btn-reset { background: transparent; color: var(--ice); border: 1px solid rgba(237, 233, 254, 0.3); }
   .admin .status { font-size: 11px; color: var(--dim); margin-top: 4px; }
 
   /* ---------- Mobile ---------- */
@@ -547,6 +548,7 @@
     <button class="btn-connect" onclick="connectTikTok()">اتصال بالبث</button>
     <button class="btn-start" onclick="startGame()">بدء اللعبة</button>
     <button class="btn-stop" onclick="stopGame()">إيقاف اللعبة</button>
+    <button class="btn-reset" onclick="resetGame()">إعادة تعيين الساحة</button>
     <div class="status" id="statusLine">غير متصل</div>
   </div>
 </div>
@@ -850,7 +852,11 @@ socket.on('tiktok:error', (d) => { statusLine.textContent = 'خطأ: ' + d.messa
 
 // countdown timer
 setInterval(() => {
-  if (!roundEndsAt) return;
+  if (!roundEndsAt) {
+    timerEl.textContent = '00:00';
+    timerEl.classList.remove('urgent');
+    return;
+  }
   const remaining = Math.max(0, roundEndsAt - Date.now());
   const mm = String(Math.floor(remaining / 60000)).padStart(2, '0');
   const ss = String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0');
@@ -877,6 +883,11 @@ function connectTikTok() {
 }
 function startGame() { getAudioCtx(); fetch('/api/start', { method: 'POST' }); }
 function stopGame() { getAudioCtx(); fetch('/api/stop', { method: 'POST' }); }
+function resetGame() {
+  getAudioCtx();
+  if (!confirm('هذا سيمسح كل اللاعبين من الساحة الحالية. متأكد؟')) return;
+  fetch('/api/reset', { method: 'POST' });
+}
 </script>
 </body>
 </html>
