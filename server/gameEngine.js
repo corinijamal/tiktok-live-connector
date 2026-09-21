@@ -33,6 +33,7 @@ const BUBBLE_MAX_RADIUS = 70; // size cap before rank tiers kick in
 const SCORE_FOR_MAX_SIZE = 1000; // points needed to reach max bubble size
 const BASE_COLLISION_DAMAGE = 10; // matches POINTS_PER_LIKE: a hit undoes ~1 tap's worth
 const ROUND_DURATION_MS = 3 * 60 * 1000;
+const MIN_ROUND_DURATION_MS = 15 * 1000; // safety floor for setConfig()
 const TICK_MS = 50; // physics/collision tick rate
 const MAX_SPEED = 140; // bubble movement speed (virtual units/sec)
 const JOIN_LIKE_THRESHOLD = 8; // raw taps required to join (taps only, no comment)
@@ -158,6 +159,8 @@ class GameEngine {
     this.running = false;
     this.roundEndsAt = 0;
     this.roundNumber = 0;
+    this.roundDurationMs = ROUND_DURATION_MS; // configurable via setConfig()
+    this.totalRounds = 0; // 0 = unlimited (default); N = stop after round N
     this.events = []; // recent floating +/- events for the UI
     this.physicsTimer = null;
     this.roundTimer = null;
@@ -170,6 +173,20 @@ class GameEngine {
     // stop()/resetPlayers() can cancel them instead of leaving them firing
     // into a stopped or cleared game.
     this.activeBarrages = new Set();
+  }
+
+  // Updates round duration / total-rounds-per-competition. Takes effect
+  // from the next round that starts — an in-progress round keeps running
+  // on its original deadline, so changing this mid-round never yanks the
+  // timer backward or forward under the host's feet.
+  setConfig({ roundDurationMs, totalRounds } = {}) {
+    if (typeof roundDurationMs === "number" && Number.isFinite(roundDurationMs) && roundDurationMs >= MIN_ROUND_DURATION_MS) {
+      this.roundDurationMs = roundDurationMs;
+    }
+    if (typeof totalRounds === "number" && Number.isFinite(totalRounds) && totalRounds >= 0) {
+      this.totalRounds = Math.floor(totalRounds);
+    }
+    return { roundDurationMs: this.roundDurationMs, totalRounds: this.totalRounds };
   }
 
   // ---------- Round lifecycle ----------
@@ -198,13 +215,14 @@ class GameEngine {
       p.roundScore = 0;
       p.kills = 0;
     }
-    this.roundEndsAt = Date.now() + ROUND_DURATION_MS;
+    this.roundEndsAt = Date.now() + this.roundDurationMs;
     this.io.emit("round:start", {
       roundNumber: this.roundNumber,
       roundEndsAt: this.roundEndsAt,
+      totalRounds: this.totalRounds,
     });
     clearTimeout(this.roundTimer);
-    this.roundTimer = setTimeout(() => this.endRound(), ROUND_DURATION_MS);
+    this.roundTimer = setTimeout(() => this.endRound(), this.roundDurationMs);
   }
 
   endRound() {
@@ -219,12 +237,20 @@ class GameEngine {
       });
       this.leaderboardHistory = this.leaderboardHistory.slice(0, 20);
     }
+    const competitionComplete = this.totalRounds > 0 && this.roundNumber >= this.totalRounds;
     this.io.emit("round:end", {
       roundNumber: this.roundNumber,
       winner: winner ? winner.toJSON() : null,
       leaderboard: ranked.slice(0, 10).map((p) => p.toJSON()),
+      competitionComplete,
+      totalRounds: this.totalRounds,
     });
-    if (this.running) {
+    if (competitionComplete) {
+      // The configured number of rounds is done — stop the whole
+      // competition rather than looping forever, matching "N rounds per
+      // competition". The host starts a fresh competition manually.
+      this.stop();
+    } else if (this.running) {
       // brief pause before next round for the "winner" screen
       setTimeout(() => {
         if (this.running) this.startNewRound();
@@ -507,6 +533,8 @@ class GameEngine {
       running: this.running,
       roundNumber: this.roundNumber,
       roundEndsAt: this.roundEndsAt,
+      roundDurationMs: this.roundDurationMs,
+      totalRounds: this.totalRounds,
       players,
       leaderboardHistory: this.leaderboardHistory,
     });
@@ -520,6 +548,7 @@ module.exports = {
   BUBBLE_MAX_RADIUS,
   SCORE_FOR_MAX_SIZE,
   ROUND_DURATION_MS,
+  MIN_ROUND_DURATION_MS,
   JOIN_LIKE_THRESHOLD,
   POINTS_PER_LIKE,
   ACTIVE_TAP_WINDOW_MS,
