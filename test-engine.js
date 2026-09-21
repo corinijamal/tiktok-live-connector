@@ -57,10 +57,13 @@ console.assert(!engine.players.has("u3"), "Reem should be eliminated after her s
 console.assert(ali.kills === 1, `Expected Ali to have 1 kill, got ${ali.kills}`);
 const elimEvents = emittedOfType("player:eliminated");
 console.assert(elimEvents.length === 1, "Expected exactly one player:eliminated event");
-console.log("7) collision elimination -> Reem removed:", !engine.players.has("u3"), "| Ali kills:", ali.kills);
+const hitEvents = emittedOfType("event").filter(([, d]) => d.type === "hit");
+console.assert(hitEvents.some(([, d]) => d.amount === 10), `Expected a collision hit event dealing 10 damage (BASE_COLLISION_DAMAGE), got amounts: ${hitEvents.map(([, d]) => d.amount)}`);
+console.log("7) collision elimination -> Reem removed:", !engine.players.has("u3"), "| Ali kills:", ali.kills, "| hit amount: 10");
 engine.running = false;
 
-// ---- 8. Gift attack targets the current top scorer and can eliminate ----
+// ---- 8. Gift barrage: the first shot fires synchronously and immediately
+// targets the current top scorer ----
 engine.handleLike("u4", "Omar", null, JOIN_LIKE_THRESHOLD);
 const omar = engine.players.get("u4");
 omar.roundScore = 500; // make Omar the top scorer (arbitrary test value)
@@ -71,6 +74,7 @@ console.assert(giftEvents.length === 1, "Expected one gift:attack event");
 const giftPayload = giftEvents[0][1];
 console.assert(giftPayload.to && giftPayload.to.userId === "u4", `Expected gift to target Omar (u4), got ${JSON.stringify(giftPayload.to)}`);
 console.assert(giftPayload.level === 3, `Expected level 3 for a 50-coin gift, got ${giftPayload.level}`);
+console.assert(giftPayload.showLevelToast === true, "Expected the first barrage shot to flag showLevelToast for the level-up toast");
 console.assert(omar.roundScore === 450, `Expected Omar's score to drop to 450 after 50 dmg, got ${omar.roundScore}`);
 console.log("8) gift attack -> target:", giftPayload.to.userId, "| level:", giftPayload.level, "| Omar score:", omar.roundScore);
 
@@ -96,6 +100,35 @@ console.log("10) stop() clears roundEndsAt:", engine.roundEndsAt === 0);
 engine.resetPlayers();
 console.assert(engine.players.size === 0, "resetPlayers should clear all active players");
 console.assert(engine.pendingJoins.size === 0, "resetPlayers should clear all pending joins");
+console.assert(engine.activeBarrages.size === 0, "resetPlayers should clear any in-flight gift barrages");
 console.log("11) resetPlayers -> players:", engine.players.size, "pending:", engine.pendingJoins.size);
 
-console.log("\nALL CHECKS RAN (see any 'Assertion failed' lines above for failures)");
+// ---- 12. Gift barrage keeps firing over time (not just once), and
+// stop()/resetPlayers() cancels it instead of leaving it running loose ----
+async function testBarrage() {
+  engine.handleLike("u6", "Target", null, JOIN_LIKE_THRESHOLD);
+  const target = engine.players.get("u6");
+  target.roundScore = 100000; // large cushion so the barrage can't finish them off mid-test
+  engine.handleLike("u7", "Shooter", null, JOIN_LIKE_THRESHOLD);
+
+  const scoreBeforeBarrage = target.roundScore;
+  engine.handleGift("u7", "Shooter", null, 20); // first shot fires immediately (synchronous)
+  console.assert(target.roundScore === scoreBeforeBarrage - 20, `Expected the first barrage shot to deal 20 damage immediately, got score ${target.roundScore}`);
+  console.assert(engine.activeBarrages.size === 1, `Expected one active barrage interval to be tracked, got ${engine.activeBarrages.size}`);
+
+  // At GIFT_SHOTS_PER_SECOND=3, waiting ~700ms should let a couple more
+  // shots land beyond the first, proving this is a sustained barrage and
+  // not a one-off attack.
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  const totalDamageSoFar = scoreBeforeBarrage - target.roundScore;
+  console.assert(totalDamageSoFar >= 40, `Expected at least 2 more shots (>=40 extra damage) to have landed after ~700ms, got total damage ${totalDamageSoFar}`);
+  console.log("12) gift barrage fires repeated shots -> total damage after ~700ms:", totalDamageSoFar);
+
+  engine.stop();
+  console.assert(engine.activeBarrages.size === 0, "Expected stop() to cancel any in-flight gift barrage");
+  console.log("13) stop() cancels an in-flight gift barrage:", engine.activeBarrages.size === 0);
+
+  console.log("\nALL CHECKS RAN (see any 'Assertion failed' lines above for failures)");
+}
+
+testBarrage();
