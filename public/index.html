@@ -222,7 +222,10 @@
     pointer-events: none;
     z-index: 1;
     animation: spikespin 6s linear infinite;
+    opacity: 0;
+    transition: opacity 0.6s ease;
   }
+  .spike-layer.visible { opacity: 1; }
   @keyframes spikespin { to { transform: translate(-50%, -50%) rotate(360deg); } }
 
   .float-num {
@@ -531,7 +534,7 @@
     <div class="arena" id="arena"></div>
   </div>
 
-  <div class="join-hint">علّق في التعليقات واضغط ❤️ الإعجاب <b>20 مرة</b> لتدخل ساحة المعركة 🔥</div>
+  <div class="join-hint">اضغط ❤️ الإعجاب <b>20 مرة</b> لتدخل ساحة المعركة 🔥</div>
 
   <div class="winner-overlay" id="winnerOverlay">
     <div class="winner-avatar" id="winnerAvatar"></div>
@@ -680,16 +683,23 @@ function buildSpikeSVG(bubbleRadiusPx, spikeCount, color, uid) {
   '</svg>';
 }
 
+// The blade's visibility follows tap activity (player.tapping), not rank —
+// it's a "power surge" while actively tapping, fading a few seconds after
+// activity stops. Its color/spike-count still reflect rank when the player
+// has one, falling back to a neutral energetic color for unranked tappers.
+const DEFAULT_BLADE_COLOR = '#67e8f9';
+const DEFAULT_BLADE_SPIKES = 10;
+
 function updateSpikes(el, player, sizePx) {
   const layer = el.querySelector('.spike-layer');
-  if (!player.rankId) {
-    if (layer.dataset.rank) { layer.innerHTML = ''; layer.dataset.rank = ''; }
-    return;
+  const color = player.rankColor || DEFAULT_BLADE_COLOR;
+  const spikes = player.rankSpikes || DEFAULT_BLADE_SPIKES;
+  const styleKey = (player.rankId || 'default') + ':' + Math.round(sizePx);
+  if (layer.dataset.style !== styleKey) {
+    layer.dataset.style = styleKey;
+    layer.innerHTML = buildSpikeSVG(sizePx / 2, spikes, color, sanitizeId(player.userId));
   }
-  const key = player.rankId + ':' + Math.round(sizePx);
-  if (layer.dataset.rank === key) return;
-  layer.dataset.rank = key;
-  layer.innerHTML = buildSpikeSVG(sizePx / 2, player.rankSpikes || 14, player.rankColor || '#a78bfa', sanitizeId(player.userId));
+  layer.classList.toggle('visible', !!player.tapping);
 }
 
 
