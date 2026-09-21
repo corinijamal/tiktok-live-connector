@@ -5,7 +5,6 @@ const { TikTokLiveConnection, WebcastEvent } = require("tiktok-live-connector");
 const { GameEngine } = require("./server/gameEngine");
 
 const PORT = process.env.PORT || 3000;
-const JOIN_KEYWORD = "انضم";
 
 const app = express();
 app.use(express.static("public"));
@@ -107,6 +106,10 @@ function connectToTikTok(username) {
     }
   }
 
+  // Switching to a different TikTok account must not carry over the
+  // previous stream's bubbles into the new one.
+  engine.resetPlayers();
+
   // The published v2.4.4 constructor reads options.processInitialData
   // internally without guarding against a missing options object, so an
   // empty object must always be passed as the second argument (passing
@@ -133,7 +136,7 @@ function connectToTikTok(username) {
       loggedSampleChat = true;
       console.log("CHAT EXTRACTED:", JSON.stringify(u), "| top-level keys:", Object.keys(data));
     }
-    engine.handleChatJoin(u.userId, u.nickname, u.profilePictureUrl, data.comment, JOIN_KEYWORD);
+    engine.handleComment(u.userId, u.nickname, u.profilePictureUrl, data.comment);
   });
 
   tiktokConnection.on(WebcastEvent.LIKE, (data) => {
@@ -194,15 +197,21 @@ app.post("/api/simulate/join", (req, res) => {
   res.json({ ok: true });
 });
 
+app.post("/api/simulate/comment", (req, res) => {
+  const { userId, nickname, profilePictureUrl, comment } = req.body;
+  engine.handleComment(userId, nickname || userId, profilePictureUrl, comment || "test");
+  res.json({ ok: true });
+});
+
 app.post("/api/simulate/like", (req, res) => {
-  const { userId, count } = req.body;
-  engine.handleLike(userId, null, null, count || 1);
+  const { userId, nickname, count } = req.body;
+  engine.handleLike(userId, nickname || userId, null, count || 1);
   res.json({ ok: true });
 });
 
 app.post("/api/simulate/gift", (req, res) => {
-  const { userId, coinValue } = req.body;
-  engine.handleGift(userId, null, null, coinValue || 1);
+  const { userId, nickname, coinValue } = req.body;
+  engine.handleGift(userId, nickname || userId, null, coinValue || 1);
   res.json({ ok: true });
 });
 
