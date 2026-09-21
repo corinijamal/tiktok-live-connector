@@ -2,21 +2,24 @@
  * Battle Arena Game Engine
  * -------------------------
  * Individual player battle game:
- *  - A viewer joins once they've (a) posted at least one comment AND
- *    (b) tapped/liked 20+ times — whichever completes second promotes them
- *    into the arena, starting with points = their accumulated taps × 10.
+ *  - A viewer joins purely by tapping/liking 20+ times — no comment
+ *    required — starting with points = their accumulated taps × 10.
  *  - Each like/tap is worth 10 points (POINTS_PER_LIKE) to an
- *    already-joined player (green).
+ *    already-joined player (green), and marks them as "tapping" for a
+ *    few seconds (drives the spike-ring blade visual, see below).
  *  - Collisions between player bubbles deal 1 damage to the collided-into
  *    player (red). If a hit brings someone to 0, they're eliminated from
  *    the arena and the attacker earns a kill.
  *  - Gifts fire a direct attack (damage = the gift's coin value) at the
  *    current top-scoring player, and show the gifter's activated level
  *    based on the gift's value.
- *  - Leveling: score grows bubble size up to a cap, then grants a
- *    rank (bronze/silver/gold/diamond/ruby/crown) with its own spike-ring
- *    color instead of continued growth. Thresholds are scaled to
- *    POINTS_PER_LIKE so the number of taps needed per rank is unchanged.
+ *  - Leveling: score grows bubble size up to a cap, then grants a rank
+ *    (bronze/silver/gold/diamond/ruby/crown) that colors the spike-ring
+ *    blade. The blade itself only shows while the player is actively
+ *    tapping (within ACTIVE_TAP_WINDOW_MS of their last tap) — it's an
+ *    activity indicator, not a permanent badge — and fades out a few
+ *    seconds after tapping stops. An unranked player who is tapping still
+ *    gets a blade, in a default color.
  *  - Rounds last 3 minutes; highest score wins; next round auto-starts
  *    until the host stops the game.
  */
@@ -29,8 +32,11 @@ const BASE_COLLISION_DAMAGE = 1;
 const ROUND_DURATION_MS = 3 * 60 * 1000;
 const TICK_MS = 50; // physics/collision tick rate
 const MAX_SPEED = 140; // bubble movement speed (virtual units/sec)
-const JOIN_LIKE_THRESHOLD = 20; // raw taps required (plus a comment) to join
+const JOIN_LIKE_THRESHOLD = 20; // raw taps required to join (taps only, no comment)
 const POINTS_PER_LIKE = 10; // points awarded per tap/like
+const ACTIVE_TAP_WINDOW_MS = 3000; // how long the blade stays visible after the last tap
+const DEFAULT_BLADE_COLOR = "#67e8f9";
+const DEFAULT_BLADE_SPIKES = 10;
 
 // Rank tiers beyond the size cap: score -> visual identity (color + spike
 // ring). Spike count escalates with rank for a clearer sense of power.
@@ -89,6 +95,7 @@ class Player {
     this.roundScore = 0;
     this.kills = 0;
     this.eliminated = false;
+    this.lastTapAt = 0; // drives the "tapping" activity flag below
     // random starting position inside arena circle
     const angle = Math.random() * Math.PI * 2;
     const dist = Math.random() * (ARENA_RADIUS * 0.6);
@@ -108,6 +115,12 @@ class Player {
     return getRank(this.roundScore);
   }
 
+  // The blade is an activity indicator, not a permanent badge: true only
+  // while this player has tapped within the last ACTIVE_TAP_WINDOW_MS.
+  get tapping() {
+    return this.lastTapAt > 0 && Date.now() - this.lastTapAt < ACTIVE_TAP_WINDOW_MS;
+  }
+
   toJSON() {
     const rank = this.rank;
     return {
@@ -120,6 +133,7 @@ class Player {
       x: this.x,
       y: this.y,
       radius: this.radius,
+      tapping: this.tapping,
       rankId: rank ? rank.id : null,
       rankLabel: rank ? rank.label : null,
       rankColor: rank ? rank.color : null,
@@ -225,7 +239,7 @@ class GameEngine {
   _getPending(userId, nickname, profilePictureUrl) {
     let entry = this.pendingJoins.get(userId);
     if (!entry) {
-      entry = { hasCommented: false, likeCount: 0, nickname, profilePictureUrl };
+      entry = { likeCount: 0, nickname, profilePictureUrl };
       this.pendingJoins.set(userId, entry);
     } else {
       entry.nickname = nickname || entry.nickname;
@@ -237,23 +251,29 @@ class GameEngine {
   _tryPromote(userId) {
     const entry = this.pendingJoins.get(userId);
     if (!entry) return;
-    if (entry.hasCommented && entry.likeCount >= JOIN_LIKE_THRESHOLD) {
+    if (entry.likeCount >= JOIN_LIKE_THRESHOLD) {
       // Raw taps accumulated before joining convert to points at the same
       // rate as taps do once in the arena, so nothing is lost by joining
       // "late" relative to tapping while already in.
       const startingScore = entry.likeCount * POINTS_PER_LIKE;
-      this.ensurePlayer(userId, entry.nickname, entry.profilePictureUrl, startingScore);
+      const p = this.ensurePlayer(userId, entry.nickname, entry.profilePictureUrl, startingScore);
+      p.lastTapAt = Date.now(); // they just tapped their way in — blade shows immediately
       this.pendingJoins.delete(userId);
     }
   }
 
-  // A comment satisfies half of the join condition. Once this viewer has
-  // also liked 20+ times, they're promoted into the arena.
+  // Comments no longer gate joining (joining is tap-count only), but a
+  // comment can still carry a fresher nickname/photo than LIKE events do,
+  // so it's kept as an opportunistic profile-info refresh.
   handleComment(userId, nickname, profilePictureUrl, comment) {
-    if (!userId || this.players.has(userId)) return;
-    const entry = this._getPending(userId, nickname, profilePictureUrl);
-    entry.hasCommented = true;
-    this._tryPromote(userId);
+    if (!userId) return;
+    const p = this.players.get(userId);
+    if (p) {
+      p.nickname = nickname || p.nickname;
+      p.profilePictureUrl = profilePictureUrl || p.profilePictureUrl;
+      return;
+    }
+    this._getPending(userId, nickname, profilePictureUrl);
   }
 
   handleLike(userId, nickname, profilePictureUrl, likeCount = 1) {
@@ -264,6 +284,7 @@ class GameEngine {
       const points = taps * POINTS_PER_LIKE;
       p.score += points;
       p.roundScore += points;
+      p.lastTapAt = Date.now();
       this.pushEvent({ type: "like", userId, amount: points });
       return;
     }
@@ -451,5 +472,8 @@ module.exports = {
   ROUND_DURATION_MS,
   JOIN_LIKE_THRESHOLD,
   POINTS_PER_LIKE,
+  ACTIVE_TAP_WINDOW_MS,
+  DEFAULT_BLADE_COLOR,
+  DEFAULT_BLADE_SPIKES,
   RANKS,
 };
