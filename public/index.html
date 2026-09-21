@@ -500,6 +500,41 @@
   .btn-start { background: var(--lime); color: #07050d; }
   .btn-stop { background: var(--ember); color: white; }
   .admin button.btn-reset { background: transparent; color: var(--ice); border: 1px solid rgba(237, 233, 254, 0.3); }
+  .admin button.btn-config { background: var(--gold); color: #07050d; }
+  .config-section {
+    border-top: 1px solid rgba(167,139,250,0.18);
+    border-bottom: 1px solid rgba(167,139,250,0.18);
+    margin: 10px 0;
+    padding: 10px 0;
+  }
+  .config-section .config-label {
+    font-size: 11px;
+    color: var(--dim);
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .config-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .config-field { flex: 1; min-width: 0; }
+  .config-field label {
+    display: block;
+    font-size: 10px;
+    color: var(--dim);
+    margin-bottom: 4px;
+  }
+  .config-field input {
+    width: 100%;
+    padding: 8px 9px;
+    border-radius: 8px;
+    border: 1px solid rgba(167,139,250,0.3);
+    background: rgba(255,255,255,0.05);
+    color: var(--ice);
+    font-family: 'Tajawal', sans-serif;
+    font-size: 13px;
+  }
   .admin .status { font-size: 11px; color: var(--dim); margin-top: 4px; }
 
   /* ---------- Mobile ---------- */
@@ -550,7 +585,7 @@
 
   <div class="winner-overlay" id="winnerOverlay">
     <div class="winner-avatar" id="winnerAvatar"></div>
-    <div class="winner-title">🏆 الفائز بالجولة</div>
+    <div class="winner-title" id="winnerTitle">🏆 الفائز بالجولة</div>
     <div class="winner-name" id="winnerName"></div>
     <div class="winner-score" id="winnerScore"></div>
   </div>
@@ -561,6 +596,22 @@
     <h4>لوحة التحكم</h4>
     <input id="usernameInput" placeholder="اسم المستخدم على تيك توك" />
     <button class="btn-connect" onclick="connectTikTok()">اتصال بالبث</button>
+
+    <div class="config-section">
+      <div class="config-label">إعدادات المسابقة</div>
+      <div class="config-row">
+        <div class="config-field">
+          <label>مدة الجولة (دقائق)</label>
+          <input id="roundDurationInput" type="number" min="0.25" step="0.25" value="3" />
+        </div>
+        <div class="config-field">
+          <label>عدد الجولات (0=غير محدود)</label>
+          <input id="totalRoundsInput" type="number" min="0" step="1" value="0" />
+        </div>
+      </div>
+      <button class="btn-config" onclick="saveConfig()">حفظ إعدادات المسابقة</button>
+    </div>
+
     <button class="btn-start" onclick="startGame()">بدء اللعبة</button>
     <button class="btn-stop" onclick="stopGame()">إيقاف اللعبة</button>
     <button class="btn-reset" onclick="resetGame()">إعادة تعيين الساحة</button>
@@ -586,6 +637,8 @@ window.addEventListener('resize', () => arenaPx = arena.clientWidth / 2);
 
 const bubbleEls = new Map();
 let roundEndsAt = 0;
+let totalRounds = 0;
+let roundDurationMs = 3 * 60 * 1000;
 
 function toPx(v) { return (v / ARENA_RADIUS) * arenaPx; }
 
@@ -733,8 +786,13 @@ function ensureBubbleEl(player) {
 }
 
 function renderState(state) {
-  roundChip.textContent = 'الجولة ' + state.roundNumber;
+  roundChip.textContent = state.totalRounds > 0
+    ? 'الجولة ' + state.roundNumber + ' من ' + state.totalRounds
+    : 'الجولة ' + state.roundNumber;
   roundEndsAt = state.roundEndsAt;
+  totalRounds = state.totalRounds || 0;
+  if (state.roundDurationMs) roundDurationMs = state.roundDurationMs;
+  syncConfigInputs();
 
   const seen = new Set();
   state.players.forEach((p) => {
@@ -858,13 +916,30 @@ socket.on('player:eliminated', (data) => {
 });
 
 socket.on('round:end', (data) => {
-  if (!data.winner) return;
-  document.getElementById('winnerAvatar').style.backgroundImage = "url('" + (data.winner.profilePictureUrl || '') + "')";
-  document.getElementById('winnerAvatar').style.backgroundColor = data.winner.profilePictureUrl ? 'transparent' : colorForName(data.winner.nickname);
-  document.getElementById('winnerName').textContent = data.winner.nickname || '';
-  document.getElementById('winnerScore').textContent = data.winner.roundScore + ' نقطة';
+  const titleEl = document.getElementById('winnerTitle');
+  if (data.winner) {
+    document.getElementById('winnerAvatar').style.backgroundImage = "url('" + (data.winner.profilePictureUrl || '') + "')";
+    document.getElementById('winnerAvatar').style.backgroundColor = data.winner.profilePictureUrl ? 'transparent' : colorForName(data.winner.nickname);
+    document.getElementById('winnerName').textContent = data.winner.nickname || '';
+    document.getElementById('winnerScore').textContent = data.winner.roundScore + ' نقطة';
+  } else if (data.competitionComplete) {
+    document.getElementById('winnerAvatar').style.backgroundImage = 'none';
+    document.getElementById('winnerAvatar').style.backgroundColor = 'transparent';
+    document.getElementById('winnerName').textContent = '';
+    document.getElementById('winnerScore').textContent = '';
+  } else {
+    return; // no winner and the competition isn't over -> nothing worth showing
+  }
+  titleEl.textContent = data.competitionComplete ? '🏁 انتهت المسابقة' : '🏆 الفائز بالجولة';
   winnerOverlay.classList.add('show');
-  setTimeout(() => winnerOverlay.classList.remove('show'), 4500);
+  if (!data.competitionComplete) {
+    setTimeout(() => winnerOverlay.classList.remove('show'), 4500);
+  }
+  // when competitionComplete, the overlay stays up until a new round starts
+});
+
+socket.on('round:start', () => {
+  winnerOverlay.classList.remove('show');
 });
 
 socket.on('tiktok:connected', (d) => {
@@ -914,6 +989,33 @@ function resetGame() {
   getAudioCtx();
   if (!confirm('هذا سيمسح كل اللاعبين من الساحة الحالية. متأكد؟')) return;
   fetch('/api/reset', { method: 'POST' });
+}
+
+function saveConfig() {
+  getAudioCtx();
+  const roundDurationMinutes = parseFloat(document.getElementById('roundDurationInput').value);
+  const totalRoundsValue = parseInt(document.getElementById('totalRoundsInput').value, 10);
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      roundDurationMinutes: Number.isFinite(roundDurationMinutes) ? roundDurationMinutes : undefined,
+      totalRounds: Number.isFinite(totalRoundsValue) ? totalRoundsValue : undefined,
+    }),
+  });
+}
+
+// Keeps the settings inputs showing the server's actual current config
+// (e.g. after a page reload), without clobbering an in-progress edit.
+function syncConfigInputs() {
+  const durationInput = document.getElementById('roundDurationInput');
+  const roundsInput = document.getElementById('totalRoundsInput');
+  if (document.activeElement !== durationInput) {
+    durationInput.value = Math.round((roundDurationMs / 60000) * 100) / 100;
+  }
+  if (document.activeElement !== roundsInput) {
+    roundsInput.value = totalRounds;
+  }
 }
 </script>
 </body>
