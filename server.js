@@ -193,13 +193,14 @@ function connectToTikTok(username) {
 
   tiktokConnection.on(WebcastEvent.LIKE, (data) => {
     const u = extractUser(data);
-    // "likeCount" is documented as the number of taps in THIS event (not
-    // the room-wide total), but given this library's nested payloads have
-    // already surprised us twice, fall back to a deep key search rather
-    // than silently defaulting to 1 tap when the top-level field is empty.
-    // Number(...) guards against the value arriving as a numeric-looking
-    // string, which several fields in these payloads have already shown.
-    const rawTapCount = data.likeCount ?? findKeyDeep(data, "likeCount") ?? 1;
+    // Confirmed from live logs: this library's actual LIKE payload uses
+    // "count" (not the documented "likeCount") for the per-event tap
+    // batch size, and "total" (not "totalLikeCount") for the room-wide
+    // running total. "likeCount" is tried first for forward-compat in
+    // case a future library version matches the docs; "count" is the
+    // field that has actually been observed to hold the real value.
+    const rawTapCount =
+      data.likeCount ?? data.count ?? findKeyDeep(data, "likeCount") ?? findKeyDeep(data, "count") ?? 1;
     const tapCount = Number(rawTapCount) || 1;
     if (sampleLikeLogsLeft > 0) {
       sampleLikeLogsLeft--;
