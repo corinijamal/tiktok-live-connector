@@ -1,4 +1,4 @@
-const { GameEngine, JOIN_LIKE_THRESHOLD } = require("./server/gameEngine");
+const { GameEngine, JOIN_LIKE_THRESHOLD, POINTS_PER_LIKE } = require("./server/gameEngine");
 
 const emitted = [];
 const fakeIo = { emit: (evt, data) => emitted.push([evt, data]) };
@@ -14,34 +14,37 @@ console.log("1) comment-only -> no player:", !engine.players.has("u1"));
 
 // ---- 2. Likes under threshold do not join ----
 engine.handleLike("u2", "Sara", null, 5);
-console.assert(!engine.players.has("u2"), "5 likes alone should NOT create a player (no comment yet)");
-console.log("2) 5 likes, no comment -> no player:", !engine.players.has("u2"));
+console.assert(!engine.players.has("u2"), "5 taps alone should NOT create a player (no comment yet)");
+console.log("2) 5 taps, no comment -> no player:", !engine.players.has("u2"));
 
-// ---- 3. Likes reaching threshold WITHOUT comment still doesn't join ----
-engine.handleLike("u2", "Sara", null, 20); // total 25 likes now, still no comment
-console.assert(!engine.players.has("u2"), "25 likes with no comment should still NOT create a player");
-console.log("3) 25 likes, no comment -> no player:", !engine.players.has("u2"));
+// ---- 3. Taps reaching threshold WITHOUT comment still doesn't join ----
+engine.handleLike("u2", "Sara", null, 20); // total 25 taps now, still no comment
+console.assert(!engine.players.has("u2"), "25 taps with no comment should still NOT create a player");
+console.log("3) 25 taps, no comment -> no player:", !engine.players.has("u2"));
 
-// ---- 4. Comment completes the join condition -> promoted with accumulated likes as score ----
+// ---- 4. Comment completes the join condition -> promoted with taps*POINTS_PER_LIKE as score ----
 engine.handleComment("u2", "Sara", null, "hi");
-console.assert(engine.players.has("u2"), "Comment after 25 likes should promote to player");
+console.assert(engine.players.has("u2"), "Comment after 25 taps should promote to player");
 const sara = engine.players.get("u2");
-console.assert(sara.roundScore === 25, `Expected Sara to start with 25 points, got ${sara.roundScore}`);
-console.log("4) comment completes join -> Sara score:", sara.roundScore);
+const expectedSaraStart = 25 * POINTS_PER_LIKE;
+console.assert(sara.roundScore === expectedSaraStart, `Expected Sara to start with ${expectedSaraStart} points, got ${sara.roundScore}`);
+console.log("4) comment completes join -> Sara score:", sara.roundScore, `(25 taps x ${POINTS_PER_LIKE})`);
 
-// ---- 5. u1 (commented first) now reaches threshold via likes -> joins with 20 ----
+// ---- 5. u1 (commented first) now reaches threshold via taps -> joins with threshold*10 ----
 engine.handleLike("u1", "Ali", null, JOIN_LIKE_THRESHOLD);
-console.assert(engine.players.has("u1"), "Ali should join once likes reach the threshold");
+console.assert(engine.players.has("u1"), "Ali should join once taps reach the threshold");
 const ali = engine.players.get("u1");
-console.assert(ali.roundScore === JOIN_LIKE_THRESHOLD, `Expected Ali to start with ${JOIN_LIKE_THRESHOLD}, got ${ali.roundScore}`);
-console.log("5) Ali joins via likes -> score:", ali.roundScore);
+const expectedAliStart = JOIN_LIKE_THRESHOLD * POINTS_PER_LIKE;
+console.assert(ali.roundScore === expectedAliStart, `Expected Ali to start with ${expectedAliStart}, got ${ali.roundScore}`);
+console.log("5) Ali joins via taps -> score:", ali.roundScore, `(${JOIN_LIKE_THRESHOLD} taps x ${POINTS_PER_LIKE})`);
 
-// ---- 6. Further likes on an already-joined player add directly ----
+// ---- 6. Further taps on an already-joined player add points at the same rate ----
 engine.handleLike("u1", "Ali", null, 10);
-console.assert(ali.roundScore === 30, `Expected Ali's score to be 30 after +10, got ${ali.roundScore}`);
-console.log("6) additional likes after join -> Ali score:", ali.roundScore);
+const expectedAliAfter = expectedAliStart + 10 * POINTS_PER_LIKE;
+console.assert(ali.roundScore === expectedAliAfter, `Expected Ali's score to be ${expectedAliAfter} after +10 taps, got ${ali.roundScore}`);
+console.log("6) additional taps after join (+10 taps) -> Ali score:", ali.roundScore);
 
-// ---- 7. Collision elimination + kill credit ----
+// ---- 7. Collision elimination + kill credit (collision damage is flat, unaffected by tap scaling) ----
 ali.x = 0; ali.y = 0; ali.vx = 0; ali.vy = 0;
 sara.x = 1; sara.y = 0; sara.vx = 0; sara.vy = 0;
 sara.roundScore = 1; // one hit from Ali should eliminate Sara
@@ -59,7 +62,7 @@ engine.running = false;
 engine.handleComment("u3", "Omar", null, "hey");
 engine.handleLike("u3", "Omar", null, JOIN_LIKE_THRESHOLD);
 const omar = engine.players.get("u3");
-omar.roundScore = 500; // make Omar the top scorer
+omar.roundScore = 500; // make Omar the top scorer (arbitrary test value)
 clearEmitted();
 engine.handleGift("u1", "Ali", null, 50); // Ali gifts -> should attack Omar (top scorer, not self)
 const giftEvents = emittedOfType("gift:attack");

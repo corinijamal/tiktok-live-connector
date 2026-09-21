@@ -94,6 +94,25 @@ function findAvatarUrlDeep(obj, depth = 0) {
   return null;
 }
 
+// Targeted fallback for the like-count field: searches the whole payload
+// for a property literally named "likeCount" (an exact key match, unlike
+// the fuzzy user/avatar searches above, since we want the real per-tap
+// count and not a lookalike field such as totalLikeCount or effectCnt).
+function findKeyDeep(obj, keyName, depth = 0) {
+  if (!obj || typeof obj !== "object" || depth > 8) return undefined;
+  if (Object.prototype.hasOwnProperty.call(obj, keyName) && obj[keyName] !== undefined && obj[keyName] !== null) {
+    return obj[keyName];
+  }
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (val && typeof val === "object") {
+      const found = findKeyDeep(val, keyName, depth + 1);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
 let loggedSampleChat = false;
 let loggedSampleLike = false;
 
@@ -141,11 +160,16 @@ function connectToTikTok(username) {
 
   tiktokConnection.on(WebcastEvent.LIKE, (data) => {
     const u = extractUser(data);
+    // "likeCount" is documented as the number of taps in THIS event (not
+    // the room-wide total), but given this library's nested payloads have
+    // already surprised us twice, fall back to a deep key search rather
+    // than silently defaulting to 1 tap when the top-level field is empty.
+    const tapCount = data.likeCount ?? findKeyDeep(data, "likeCount") ?? 1;
     if (!loggedSampleLike) {
       loggedSampleLike = true;
-      console.log("LIKE EXTRACTED:", JSON.stringify(u), "| top-level keys:", Object.keys(data));
+      console.log("LIKE EXTRACTED:", JSON.stringify(u), "| tapCount:", tapCount, "| top-level keys:", Object.keys(data));
     }
-    engine.handleLike(u.userId, u.nickname, u.profilePictureUrl, data.likeCount || 1);
+    engine.handleLike(u.userId, u.nickname, u.profilePictureUrl, tapCount);
   });
 
   tiktokConnection.on(WebcastEvent.GIFT, (data) => {
