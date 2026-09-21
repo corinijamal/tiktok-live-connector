@@ -1,4 +1,4 @@
-const { GameEngine, JOIN_LIKE_THRESHOLD, POINTS_PER_LIKE, ACTIVE_TAP_WINDOW_MS } = require("./server/gameEngine");
+const { GameEngine, JOIN_LIKE_THRESHOLD, POINTS_PER_LIKE, ACTIVE_TAP_WINDOW_MS, MIN_ROUND_DURATION_MS } = require("./server/gameEngine");
 
 const emitted = [];
 const fakeIo = { emit: (evt, data) => emitted.push([evt, data]) };
@@ -103,7 +103,27 @@ console.assert(engine.pendingJoins.size === 0, "resetPlayers should clear all pe
 console.assert(engine.activeBarrages.size === 0, "resetPlayers should clear any in-flight gift barrages");
 console.log("11) resetPlayers -> players:", engine.players.size, "pending:", engine.pendingJoins.size);
 
-// ---- 12. Gift barrage keeps firing over time (not just once), and
+// ---- 12. setConfig: configurable round duration + rounds-per-competition,
+// with the competition auto-stopping once the configured round count is
+// reached (instead of looping forever) ----
+const cfgEngine = new GameEngine(fakeIo);
+const cfgResult = cfgEngine.setConfig({ roundDurationMs: 90000, totalRounds: 2 });
+console.assert(cfgResult.roundDurationMs === 90000 && cfgResult.totalRounds === 2, `Expected setConfig to apply valid values, got ${JSON.stringify(cfgResult)}`);
+cfgEngine.setConfig({ roundDurationMs: 500, totalRounds: -3 }); // invalid: below floor / negative
+console.assert(cfgEngine.roundDurationMs === 90000, `Expected an invalid (too-short) duration to be ignored, got ${cfgEngine.roundDurationMs}`);
+console.assert(cfgEngine.totalRounds === 2, `Expected an invalid (negative) round count to be ignored, got ${cfgEngine.totalRounds}`);
+
+cfgEngine.setConfig({ roundDurationMs: MIN_ROUND_DURATION_MS }); // shorten so the test doesn't wait real minutes
+cfgEngine.start(); // round 1 of 2
+cfgEngine.endRound(); // end round 1 -> competition NOT complete yet, should auto-continue
+console.assert(cfgEngine.running === true, "Expected the engine to still be running after round 1 of 2");
+cfgEngine.startNewRound(); // round 2 of 2 (calling directly instead of waiting the real 5s pause)
+cfgEngine.endRound(); // end round 2 -> competition complete, should auto-stop
+console.assert(cfgEngine.running === false, "Expected the engine to auto-stop after the final configured round");
+console.assert(cfgEngine.roundEndsAt === 0, "Expected roundEndsAt to be cleared once the competition auto-stops");
+console.log("12) setConfig + competition auto-stop after round", cfgEngine.roundNumber, "of 2 -> running:", cfgEngine.running);
+
+// ---- 13. Gift barrage keeps firing over time (not just once), and
 // stop()/resetPlayers() cancels it instead of leaving it running loose ----
 async function testBarrage() {
   engine.handleLike("u6", "Target", null, JOIN_LIKE_THRESHOLD);
@@ -122,11 +142,11 @@ async function testBarrage() {
   await new Promise((resolve) => setTimeout(resolve, 700));
   const totalDamageSoFar = scoreBeforeBarrage - target.roundScore;
   console.assert(totalDamageSoFar >= 40, `Expected at least 2 more shots (>=40 extra damage) to have landed after ~700ms, got total damage ${totalDamageSoFar}`);
-  console.log("12) gift barrage fires repeated shots -> total damage after ~700ms:", totalDamageSoFar);
+  console.log("13) gift barrage fires repeated shots -> total damage after ~700ms:", totalDamageSoFar);
 
   engine.stop();
   console.assert(engine.activeBarrages.size === 0, "Expected stop() to cancel any in-flight gift barrage");
-  console.log("13) stop() cancels an in-flight gift barrage:", engine.activeBarrages.size === 0);
+  console.log("14) stop() cancels an in-flight gift barrage:", engine.activeBarrages.size === 0);
 
   console.log("\nALL CHECKS RAN (see any 'Assertion failed' lines above for failures)");
 }

@@ -258,6 +258,25 @@ app.post("/api/reset", (req, res) => {
   res.json({ ok: true });
 });
 
+app.post("/api/config", (req, res) => {
+  const { roundDurationMinutes, totalRounds } = req.body || {};
+  const config = {};
+  if (roundDurationMinutes !== undefined) {
+    const minutes = Number(roundDurationMinutes);
+    if (Number.isFinite(minutes) && minutes > 0) {
+      config.roundDurationMs = Math.round(minutes * 60 * 1000);
+    }
+  }
+  if (totalRounds !== undefined) {
+    const rounds = Number(totalRounds);
+    if (Number.isFinite(rounds) && rounds >= 0) {
+      config.totalRounds = rounds;
+    }
+  }
+  const applied = engine.setConfig(config);
+  res.json({ ok: true, roundDurationMs: applied.roundDurationMs, totalRounds: applied.totalRounds });
+});
+
 // Manual/test event injection (useful for local testing without a live TikTok stream)
 app.post("/api/simulate/join", (req, res) => {
   const { userId, nickname, profilePictureUrl } = req.body;
