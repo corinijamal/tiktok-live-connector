@@ -2,25 +2,29 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>ساحة المعركة</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
 <script src="/socket.io/socket.io.js"></script>
 <style>
   :root {
-    --void: #0a0612;
-    --void-2: #140b24;
-    --ember: #ff3d5a;
-    --lime: #baff29;
-    --gold: #ffb020;
-    --violet: #7b3ff2;
-    --violet-glow: #a869ff;
-    --ice: #e9e4ff;
-    --dim: #6b6284;
+    --void: #07050d;
+    --void-2: #100a1f;
+    --ember: #fb4d6b;
+    --lime: #a3e635;
+    --gold: #fbbf24;
+    --violet: #7c3aed;
+    --violet-glow: #a78bfa;
+    --ice: #ede9fe;
+    --dim: #7a7194;
+    --panel-bg: rgba(16, 10, 31, 0.78);
+    --panel-border: rgba(167, 139, 250, 0.22);
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
   }
 
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
   html, body {
     margin: 0;
@@ -36,9 +40,10 @@
     position: relative;
     width: 100vw;
     height: 100vh;
+    height: 100dvh;
     background:
-      radial-gradient(ellipse 120% 80% at 50% -10%, rgba(123, 63, 242, 0.35), transparent 60%),
-      radial-gradient(ellipse 100% 60% at 50% 110%, rgba(255, 61, 90, 0.18), transparent 60%),
+      radial-gradient(ellipse 120% 70% at 50% -10%, rgba(124, 58, 237, 0.32), transparent 62%),
+      radial-gradient(ellipse 100% 55% at 50% 112%, rgba(251, 77, 107, 0.16), transparent 60%),
       var(--void);
   }
 
@@ -49,26 +54,30 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 18px 28px;
+    gap: 8px;
+    padding: calc(14px + var(--safe-t)) 16px 10px;
     z-index: 20;
+    flex-wrap: wrap;
   }
 
   .brand {
     font-family: 'Rajdhani', sans-serif;
     font-weight: 700;
-    font-size: 22px;
-    letter-spacing: 0.5px;
+    font-size: 17px;
+    letter-spacing: 0.4px;
     color: var(--ice);
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    white-space: nowrap;
   }
   .brand .dot {
-    width: 10px; height: 10px;
+    width: 8px; height: 8px;
     border-radius: 50%;
     background: var(--ember);
-    box-shadow: 0 0 12px var(--ember);
+    box-shadow: 0 0 10px var(--ember);
     animation: pulse 1.6s ease-in-out infinite;
+    flex-shrink: 0;
   }
   @keyframes pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
@@ -76,25 +85,27 @@
   }
 
   .round-chip {
-    background: linear-gradient(135deg, var(--violet), #4c1fb0);
+    background: linear-gradient(135deg, var(--violet), #3b1a80);
+    border: 1px solid rgba(255,255,255,0.08);
     border-radius: 999px;
-    padding: 8px 20px;
+    padding: 6px 16px;
     font-family: 'Rajdhani', sans-serif;
     font-weight: 700;
-    font-size: 15px;
-    box-shadow: 0 4px 20px rgba(123, 63, 242, 0.5);
+    font-size: 13px;
+    box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4);
+    white-space: nowrap;
   }
 
   .timer {
     font-family: 'Rajdhani', sans-serif;
     font-weight: 700;
-    font-size: 40px;
-    letter-spacing: 2px;
+    font-size: 30px;
+    letter-spacing: 1.5px;
     color: var(--gold);
-    text-shadow: 0 0 20px rgba(255, 176, 32, 0.6);
+    text-shadow: 0 0 18px rgba(251, 191, 36, 0.55);
     font-variant-numeric: tabular-nums;
   }
-  .timer.urgent { color: var(--ember); text-shadow: 0 0 24px rgba(255, 61, 90, 0.8); }
+  .timer.urgent { color: var(--ember); text-shadow: 0 0 22px rgba(251, 77, 107, 0.75); }
 
   /* ---------- Arena ---------- */
   .arena-wrap {
@@ -103,22 +114,36 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0 8px;
   }
 
   .arena {
     position: relative;
-    width: min(88vmin, 720px);
-    height: min(88vmin, 720px);
+    width: min(90vmin, 92vw, 720px);
+    height: min(90vmin, 92vw, 720px);
     border-radius: 50%;
-    border: 2px solid rgba(168, 105, 255, 0.35);
+    border: 2px solid rgba(167, 139, 250, 0.3);
     background:
-      repeating-radial-gradient(circle, rgba(168,105,255,0.05) 0px, rgba(168,105,255,0.05) 1px, transparent 1px, transparent 46px),
-      radial-gradient(circle at 50% 50%, rgba(123,63,242,0.12), transparent 70%);
+      repeating-radial-gradient(circle, rgba(167,139,250,0.05) 0px, rgba(167,139,250,0.05) 1px, transparent 1px, transparent 44px),
+      radial-gradient(circle at 50% 50%, rgba(124,58,237,0.12), transparent 70%);
     box-shadow:
-      0 0 0 1px rgba(168,105,255,0.1),
-      0 0 80px rgba(123,63,242,0.25) inset,
-      0 0 120px rgba(123,63,242,0.15);
+      0 0 0 1px rgba(167,139,250,0.08),
+      0 0 90px rgba(124,58,237,0.22) inset,
+      0 0 110px rgba(124,58,237,0.14);
+    overflow: visible;
   }
+  .arena::before {
+    content: '';
+    position: absolute;
+    inset: -14px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0%, rgba(167,139,250,0.35) 8%, transparent 16%, transparent 50%, rgba(251,77,107,0.28) 58%, transparent 66%, transparent 100%);
+    animation: spin 14s linear infinite;
+    opacity: 0.7;
+    pointer-events: none;
+    z-index: -1;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   .bubble {
     position: absolute;
@@ -129,14 +154,17 @@
     background-size: cover;
     background-position: center;
     border: 3px solid var(--violet-glow);
-    box-shadow: 0 0 14px rgba(168, 105, 255, 0.55);
+    box-shadow: 0 0 14px rgba(167, 139, 250, 0.5);
     transform: translate(-50%, -50%);
-    transition: width 0.25s ease, height 0.25s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    transition: width 0.2s ease, height 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease,
+                left 0.05s linear, top 0.05s linear;
     will-change: left, top;
+    z-index: 5;
   }
-  .bubble.boosted {
-    border-color: var(--ember);
-    box-shadow: 0 0 22px rgba(255, 61, 90, 0.85), 0 0 6px rgba(255,61,90,0.9);
+  .bubble.eliminated {
+    transition: transform 0.45s ease, opacity 0.45s ease;
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
   }
   .bubble .name-tag {
     position: absolute;
@@ -146,13 +174,20 @@
     font-size: 11px;
     font-weight: 700;
     color: var(--ice);
-    background: rgba(10, 6, 18, 0.75);
+    background: rgba(7, 5, 13, 0.78);
     padding: 2px 8px;
     border-radius: 999px;
     white-space: nowrap;
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .bubble .name-tag .kills {
+    color: var(--ember);
+    font-size: 10px;
   }
   .bubble .score-tag {
     position: absolute;
@@ -168,8 +203,9 @@
     position: absolute;
     top: -6px;
     right: -6px;
-    font-size: 16px;
+    font-size: 15px;
     filter: drop-shadow(0 0 4px rgba(0,0,0,0.6));
+    z-index: 6;
   }
   .bubble .initial {
     font-family: 'Rajdhani', sans-serif;
@@ -179,63 +215,99 @@
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
     pointer-events: none;
   }
+  .spike-layer {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 1;
+    animation: spikespin 6s linear infinite;
+  }
+  @keyframes spikespin { to { transform: translate(-50%, -50%) rotate(360deg); } }
 
   .float-num {
     position: absolute;
     font-family: 'Rajdhani', sans-serif;
     font-weight: 700;
-    font-size: 18px;
+    font-size: 17px;
     pointer-events: none;
     animation: floatUp 0.9s ease-out forwards;
     z-index: 30;
   }
-  .float-num.plus { color: var(--lime); text-shadow: 0 0 8px rgba(186,255,41,0.7); }
-  .float-num.minus { color: var(--ember); text-shadow: 0 0 8px rgba(255,61,90,0.7); }
+  .float-num.plus { color: var(--lime); text-shadow: 0 0 8px rgba(163,230,53,0.7); }
+  .float-num.minus { color: var(--ember); text-shadow: 0 0 8px rgba(251,77,107,0.7); }
   @keyframes floatUp {
     0% { opacity: 1; transform: translate(-50%, 0); }
-    100% { opacity: 0; transform: translate(-50%, -60px); }
+    100% { opacity: 0; transform: translate(-50%, -56px); }
+  }
+
+  .projectile {
+    position: absolute;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff, var(--gold) 60%, transparent 100%);
+    box-shadow: 0 0 12px 4px rgba(251, 191, 36, 0.8);
+    pointer-events: none;
+    z-index: 25;
+    transform: translate(-50%, -50%);
+  }
+  .impact-flash {
+    position: absolute;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--gold);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 26;
+    animation: impactPulse 0.4s ease-out forwards;
+  }
+  @keyframes impactPulse {
+    0% { width: 10px; height: 10px; opacity: 1; }
+    100% { width: 70px; height: 70px; opacity: 0; }
   }
 
   /* ---------- Leaderboard ---------- */
   .leaderboard {
     position: absolute;
-    top: 90px;
-    left: 24px;
-    width: 220px;
-    background: rgba(20, 11, 36, 0.7);
-    border: 1px solid rgba(168, 105, 255, 0.25);
-    border-radius: 16px;
-    padding: 14px;
-    backdrop-filter: blur(8px);
+    top: calc(76px + var(--safe-t));
+    left: 14px;
+    width: 188px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 10px 12px;
+    backdrop-filter: blur(10px);
     z-index: 20;
   }
   .leaderboard h3 {
-    margin: 0 0 10px;
+    margin: 0 0 8px;
     font-family: 'Rajdhani', sans-serif;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--gold);
+    letter-spacing: 0.3px;
   }
   .lb-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 5px 0;
-    font-size: 13px;
+    gap: 7px;
+    padding: 4px 0;
+    font-size: 12px;
   }
   .lb-rank {
-    width: 18px;
+    width: 14px;
     color: var(--dim);
     font-weight: 700;
     font-family: 'Rajdhani', sans-serif;
+    font-size: 11px;
   }
   .lb-avatar {
-    width: 24px; height: 24px;
+    width: 22px; height: 22px;
     border-radius: 50%;
     background-size: cover;
     background-position: center;
     flex-shrink: 0;
-    border: 1px solid rgba(168,105,255,0.4);
+    border: 1px solid rgba(167,139,250,0.4);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -243,7 +315,7 @@
   .lb-initial {
     font-family: 'Rajdhani', sans-serif;
     font-weight: 700;
-    font-size: 11px;
+    font-size: 10px;
     color: rgba(255, 255, 255, 0.9);
   }
   .lb-name {
@@ -256,24 +328,62 @@
     font-family: 'Rajdhani', sans-serif;
     font-weight: 700;
     color: var(--lime);
+    font-size: 12px;
   }
 
   /* ---------- Join hint ---------- */
   .join-hint {
     position: absolute;
-    bottom: 28px;
+    bottom: calc(18px + var(--safe-b));
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(20, 11, 36, 0.8);
-    border: 1px solid rgba(255, 176, 32, 0.4);
+    background: var(--panel-bg);
+    border: 1px solid rgba(251, 191, 36, 0.35);
     border-radius: 999px;
-    padding: 10px 24px;
-    font-size: 14px;
+    padding: 9px 20px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--gold);
     z-index: 20;
+    max-width: min(92vw, 460px);
+    text-align: center;
+    backdrop-filter: blur(8px);
   }
   .join-hint b { color: var(--ice); }
+
+  /* ---------- Toasts ---------- */
+  .toast-stack {
+    position: absolute;
+    top: calc(66px + var(--safe-t));
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    z-index: 45;
+    pointer-events: none;
+    width: min(94vw, 420px);
+  }
+  .toast {
+    background: rgba(16, 10, 31, 0.88);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 7px 16px;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: center;
+    backdrop-filter: blur(8px);
+    animation: toastIn 0.25s ease, toastOut 0.3s ease 3.1s forwards;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .toast.level { border-color: rgba(251, 191, 36, 0.5); color: var(--gold); }
+  .toast.kill { border-color: rgba(251, 77, 107, 0.5); color: var(--ember); }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes toastOut { to { opacity: 0; transform: translateY(-8px); } }
 
   /* ---------- Winner overlay ---------- */
   .winner-overlay {
@@ -282,78 +392,123 @@
     display: none;
     align-items: center;
     justify-content: center;
-    background: rgba(10, 6, 18, 0.85);
+    background: rgba(7, 5, 13, 0.86);
     backdrop-filter: blur(6px);
     z-index: 50;
     flex-direction: column;
-    gap: 16px;
+    gap: 14px;
+    padding: 20px;
+    text-align: center;
   }
   .winner-overlay.show { display: flex; }
   .winner-avatar {
-    width: 140px; height: 140px;
+    width: 130px; height: 130px;
     border-radius: 50%;
     background-size: cover;
     background-position: center;
     border: 4px solid var(--gold);
-    box-shadow: 0 0 50px rgba(255, 176, 32, 0.6);
+    box-shadow: 0 0 50px rgba(251, 191, 36, 0.55);
   }
   .winner-title {
     font-family: 'Rajdhani', sans-serif;
     font-weight: 700;
-    font-size: 20px;
+    font-size: 18px;
     color: var(--gold);
     letter-spacing: 1px;
   }
-  .winner-name {
-    font-size: 26px;
-    font-weight: 900;
-  }
-  .winner-score {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 18px;
-    color: var(--lime);
-  }
+  .winner-name { font-size: 24px; font-weight: 900; }
+  .winner-score { font-family: 'Rajdhani', sans-serif; font-size: 16px; color: var(--lime); }
 
-  /* ---------- Admin panel ---------- */
+  /* ---------- Admin panel (hidden by default, toggled) ---------- */
+  .fab-toggle {
+    position: absolute;
+    bottom: calc(18px + var(--safe-b));
+    right: 16px;
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    border: 1px solid var(--panel-border);
+    background: var(--panel-bg);
+    color: var(--ice);
+    font-size: 19px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 61;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+    transition: transform 0.2s ease;
+  }
+  .fab-toggle:active { transform: scale(0.92); }
+
   .admin {
     position: absolute;
-    bottom: 20px;
-    right: 20px;
-    background: rgba(20, 11, 36, 0.85);
-    border: 1px solid rgba(168, 105, 255, 0.3);
-    border-radius: 14px;
-    padding: 14px;
-    width: 240px;
+    bottom: calc(72px + var(--safe-b));
+    right: 16px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 16px;
+    width: min(250px, calc(100vw - 32px));
     z-index: 60;
     font-size: 13px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.45);
+    transform: translateY(16px) scale(0.96);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.22s ease, opacity 0.22s ease;
   }
-  .admin h4 { margin: 0 0 10px; font-size: 13px; color: var(--dim); font-weight: 700; }
+  .admin.open { transform: translateY(0) scale(1); opacity: 1; pointer-events: auto; }
+  .admin h4 { margin: 0 0 10px; font-size: 12px; color: var(--dim); font-weight: 700; letter-spacing: 0.3px; }
   .admin input {
     width: 100%;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid rgba(168,105,255,0.3);
+    padding: 9px 11px;
+    border-radius: 9px;
+    border: 1px solid rgba(167,139,250,0.3);
     background: rgba(255,255,255,0.05);
     color: var(--ice);
     margin-bottom: 8px;
     font-family: 'Tajawal', sans-serif;
+    font-size: 13px;
   }
+  .admin input::placeholder { color: var(--dim); }
   .admin button {
     width: 100%;
-    padding: 9px;
-    border-radius: 8px;
+    padding: 10px;
+    border-radius: 9px;
     border: none;
     font-weight: 700;
     cursor: pointer;
     margin-bottom: 6px;
     font-family: 'Tajawal', sans-serif;
-    transition: opacity 0.15s;
+    font-size: 13px;
+    transition: opacity 0.15s, transform 0.1s;
   }
-  .admin button:hover { opacity: 0.85; }
+  .admin button:active { transform: scale(0.98); }
   .btn-connect { background: var(--violet); color: white; }
-  .btn-start { background: var(--lime); color: #0a0612; }
+  .btn-start { background: var(--lime); color: #07050d; }
   .btn-stop { background: var(--ember); color: white; }
   .admin .status { font-size: 11px; color: var(--dim); margin-top: 4px; }
+
+  /* ---------- Mobile ---------- */
+  @media (max-width: 640px) {
+    .topbar { padding: calc(10px + var(--safe-t)) 10px 8px; }
+    .brand { font-size: 14px; }
+    .timer { font-size: 23px; }
+    .round-chip { font-size: 11px; padding: 5px 12px; }
+    .leaderboard { top: calc(60px + var(--safe-t)); left: 8px; width: 150px; padding: 8px 9px; }
+    .leaderboard h3 { font-size: 10.5px; }
+    .lb-row { font-size: 10.5px; gap: 5px; }
+    .lb-avatar { width: 18px; height: 18px; }
+    .join-hint { font-size: 11.5px; padding: 7px 14px; bottom: calc(14px + var(--safe-b)); }
+    .toast-stack { top: calc(54px + var(--safe-t)); }
+    .toast { font-size: 11px; padding: 6px 12px; }
+    .fab-toggle { width: 42px; height: 42px; font-size: 17px; right: 12px; }
+    .admin { right: 12px; width: min(230px, calc(100vw - 24px)); }
+    .winner-avatar { width: 100px; height: 100px; }
+    .winner-name { font-size: 20px; }
+  }
 </style>
 </head>
 <body>
@@ -369,11 +524,13 @@
     <div id="lbList"></div>
   </div>
 
+  <div class="toast-stack" id="toastStack"></div>
+
   <div class="arena-wrap">
     <div class="arena" id="arena"></div>
   </div>
 
-  <div class="join-hint">اكتب <b>"انضم"</b> في التعليقات للدخول إلى المعركة 🔥</div>
+  <div class="join-hint">علّق في التعليقات واضغط ❤️ الإعجاب <b>20 مرة</b> لتدخل ساحة المعركة 🔥</div>
 
   <div class="winner-overlay" id="winnerOverlay">
     <div class="winner-avatar" id="winnerAvatar"></div>
@@ -382,7 +539,9 @@
     <div class="winner-score" id="winnerScore"></div>
   </div>
 
-  <div class="admin">
+  <button class="fab-toggle" id="fabToggle" aria-label="لوحة التحكم">⚙️</button>
+
+  <div class="admin" id="adminPanel">
     <h4>لوحة التحكم</h4>
     <input id="usernameInput" placeholder="اسم المستخدم على تيك توك" />
     <button class="btn-connect" onclick="connectTikTok()">اتصال بالبث</button>
@@ -400,6 +559,9 @@ const roundChip = document.getElementById('roundChip');
 const lbList = document.getElementById('lbList');
 const statusLine = document.getElementById('statusLine');
 const winnerOverlay = document.getElementById('winnerOverlay');
+const toastStack = document.getElementById('toastStack');
+const adminPanel = document.getElementById('adminPanel');
+const fabToggle = document.getElementById('fabToggle');
 
 const ARENA_RADIUS = 500; // must match server virtual units
 let arenaPx = arena.clientWidth / 2;
@@ -410,36 +572,119 @@ let roundEndsAt = 0;
 
 function toPx(v) { return (v / ARENA_RADIUS) * arenaPx; }
 
-function ensureBubbleEl(player) {
-  let el = bubbleEls.get(player.userId);
-  if (!el) {
-    el = document.createElement('div');
-    el.className = 'bubble';
-    el.innerHTML = `
-      <div class="score-tag"></div>
-      <div class="name-tag"></div>
-      <div class="badge"></div>
-      <div class="initial"></div>
-    `;
-    arena.appendChild(el);
-    bubbleEls.set(player.userId, el);
+// ---------- Audio (procedural, no external files) ----------
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; }
   }
-  return el;
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+function playTone(freq, duration, type, gainPeak, delay) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  delay = delay || 0;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+  gain.gain.setValueAtTime(0, ctx.currentTime + delay);
+  gain.gain.linearRampToValueAtTime(gainPeak || 0.15, ctx.currentTime + delay + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + delay + duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(ctx.currentTime + delay);
+  osc.stop(ctx.currentTime + delay + duration + 0.03);
+}
+let lastHitSoundAt = 0;
+function playHitSound(heavy) {
+  const now = Date.now();
+  if (now - lastHitSoundAt < 70) return;
+  lastHitSoundAt = now;
+  if (heavy) {
+    playTone(130, 0.28, 'sawtooth', 0.22, 0);
+    playTone(85, 0.32, 'square', 0.16, 0.02);
+  } else {
+    playTone(240, 0.07, 'square', 0.07, 0);
+  }
+}
+function playLevelUpSound() {
+  playTone(440, 0.12, 'triangle', 0.16, 0);
+  playTone(660, 0.12, 'triangle', 0.16, 0.09);
+  playTone(880, 0.2, 'triangle', 0.19, 0.18);
 }
 
-// Deterministic background color per player, used when no profile photo is
-// available so the bubble still reads as "this player" rather than a blank
-// circle (TikTok doesn't always send a photo URL on every event type).
+// ---------- Toasts ----------
+function showToast(message, cls) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (cls ? ' ' + cls : '');
+  el.textContent = message;
+  toastStack.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ---------- Bubble avatar fallback color ----------
 function colorForName(name) {
-  const palette = ['#7b3ff2', '#c9376a', '#1f8a70', '#b8860b', '#2a6f97', '#9d4edd'];
+  const palette = ['#7c3aed', '#c9376a', '#1f8a70', '#b8860b', '#2a6f97', '#9d4edd'];
   let hash = 0;
   const str = name || '?';
   for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
   return palette[hash % palette.length];
 }
 
+// ---------- Spike ring (rank tiers) ----------
+function buildSpikeSVG(bubbleRadiusPx, spikeCount, color) {
+  const spikeLen = Math.max(7, bubbleRadiusPx * 0.32);
+  const outer = bubbleRadiusPx + spikeLen;
+  const size = outer * 2;
+  const cx = outer, cy = outer;
+  let shapes = '';
+  for (let i = 0; i < spikeCount; i++) {
+    const angle = (i / spikeCount) * Math.PI * 2;
+    const halfBase = (Math.PI / spikeCount) * 0.36;
+    const tipX = cx + Math.cos(angle) * outer;
+    const tipY = cy + Math.sin(angle) * outer;
+    const b1x = cx + Math.cos(angle - halfBase) * bubbleRadiusPx;
+    const b1y = cy + Math.sin(angle - halfBase) * bubbleRadiusPx;
+    const b2x = cx + Math.cos(angle + halfBase) * bubbleRadiusPx;
+    const b2y = cy + Math.sin(angle + halfBase) * bubbleRadiusPx;
+    shapes += '<polygon points="' + tipX + ',' + tipY + ' ' + b1x + ',' + b1y + ' ' + b2x + ',' + b2y + '" fill="' + color + '" opacity="0.9"/>';
+  }
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" style="filter:drop-shadow(0 0 5px ' + color + ')">' + shapes + '</svg>';
+}
+
+function updateSpikes(el, player, sizePx) {
+  const layer = el.querySelector('.spike-layer');
+  if (!player.rankId) {
+    if (layer.dataset.rank) { layer.innerHTML = ''; layer.dataset.rank = ''; }
+    return;
+  }
+  const key = player.rankId + ':' + Math.round(sizePx);
+  if (layer.dataset.rank === key) return;
+  layer.dataset.rank = key;
+  layer.innerHTML = buildSpikeSVG(sizePx / 2, player.rankSpikes || 6, player.rankColor || '#a78bfa');
+}
+
+function ensureBubbleEl(player) {
+  let el = bubbleEls.get(player.userId);
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'bubble';
+    el.innerHTML =
+      '<div class="spike-layer"></div>' +
+      '<div class="score-tag"></div>' +
+      '<div class="name-tag"><span class="name-text"></span><span class="kills"></span></div>' +
+      '<div class="badge"></div>' +
+      '<div class="initial"></div>';
+    arena.appendChild(el);
+    bubbleEls.set(player.userId, el);
+  }
+  return el;
+}
+
 function renderState(state) {
-  roundChip.textContent = `الجولة ${state.roundNumber}`;
+  roundChip.textContent = 'الجولة ' + state.roundNumber;
   roundEndsAt = state.roundEndsAt;
 
   const seen = new Set();
@@ -453,17 +698,19 @@ function renderState(state) {
     el.style.top = cy + 'px';
     el.style.width = size + 'px';
     el.style.height = size + 'px';
-    el.style.backgroundImage = p.profilePictureUrl ? `url('${p.profilePictureUrl}')` : 'none';
+    el.style.backgroundImage = p.profilePictureUrl ? "url('" + p.profilePictureUrl + "')" : 'none';
     el.style.backgroundColor = p.profilePictureUrl ? 'transparent' : colorForName(p.nickname);
-    el.classList.toggle('boosted', p.boosted);
+    el.style.borderColor = p.rankColor || 'var(--violet-glow)';
     el.querySelector('.score-tag').textContent = p.roundScore;
-    el.querySelector('.name-tag').textContent = p.nickname || '';
-    el.querySelector('.badge').textContent = p.badge || '';
+    el.querySelector('.name-text').textContent = p.nickname || '';
+    el.querySelector('.kills').textContent = p.kills > 0 ? ('💀' + p.kills) : '';
+    el.querySelector('.badge').textContent = p.rankLabel || '';
     const initialEl = el.querySelector('.initial');
     initialEl.textContent = p.profilePictureUrl ? '' : (p.nickname || '?').trim().charAt(0).toUpperCase();
+    updateSpikes(el, p, size);
   });
 
-  // remove stale bubbles
+  // remove stale bubbles (that weren't explicitly eliminated, e.g. after a reconnect)
   for (const [userId, el] of bubbleEls.entries()) {
     if (!seen.has(userId)) {
       el.remove();
@@ -471,15 +718,18 @@ function renderState(state) {
     }
   }
 
-  // leaderboard (top 5)
-  lbList.innerHTML = state.players.slice(0, 5).map((p, i) => `
-    <div class="lb-row">
-      <div class="lb-rank">${i + 1}</div>
-      <div class="lb-avatar" style="background-image:url('${p.profilePictureUrl || ''}'); background-color:${p.profilePictureUrl ? 'transparent' : colorForName(p.nickname)}">${p.profilePictureUrl ? '' : `<span class="lb-initial">${(p.nickname || '?').trim().charAt(0).toUpperCase()}</span>`}</div>
-      <div class="lb-name">${p.nickname || ''}</div>
-      <div class="lb-score">${p.roundScore}</div>
-    </div>
-  `).join('');
+  lbList.innerHTML = state.players.slice(0, 5).map((p, i) => {
+    const avatarStyle = p.profilePictureUrl
+      ? "background-image:url('" + p.profilePictureUrl + "')"
+      : 'background-color:' + colorForName(p.nickname);
+    const initial = p.profilePictureUrl ? '' : '<span class="lb-initial">' + (p.nickname || '?').trim().charAt(0).toUpperCase() + '</span>';
+    return '<div class="lb-row">' +
+      '<div class="lb-rank">' + (i + 1) + '</div>' +
+      '<div class="lb-avatar" style="' + avatarStyle + '">' + initial + '</div>' +
+      '<div class="lb-name">' + (p.nickname || '') + '</div>' +
+      '<div class="lb-score">' + p.roundScore + '</div>' +
+    '</div>';
+  }).join('');
 }
 
 function spawnFloatNum(userId, amount, isPlus) {
@@ -494,23 +744,82 @@ function spawnFloatNum(userId, amount, isPlus) {
   setTimeout(() => f.remove(), 900);
 }
 
+function arenaPoint(x, y) {
+  return { left: arenaPx + toPx(x), top: arenaPx + toPx(y) };
+}
+
+function spawnProjectile(from, to) {
+  const start = arenaPoint(from.x, from.y);
+  const end = arenaPoint(to.x, to.y);
+  const p = document.createElement('div');
+  p.className = 'projectile';
+  p.style.left = start.left + 'px';
+  p.style.top = start.top + 'px';
+  arena.appendChild(p);
+  requestAnimationFrame(() => {
+    p.style.transition = 'left 0.35s ease-in, top 0.35s ease-in';
+    p.style.left = end.left + 'px';
+    p.style.top = end.top + 'px';
+  });
+  setTimeout(() => {
+    p.remove();
+    spawnImpactFlash(end.left, end.top);
+  }, 360);
+}
+
+function spawnImpactFlash(left, top) {
+  const f = document.createElement('div');
+  f.className = 'impact-flash';
+  f.style.left = left + 'px';
+  f.style.top = top + 'px';
+  arena.appendChild(f);
+  setTimeout(() => f.remove(), 420);
+}
+
 socket.on('state', renderState);
 
 socket.on('event', (evt) => {
   if (evt.type === 'like') spawnFloatNum(evt.userId, evt.amount, true);
-  if (evt.type === 'hit') spawnFloatNum(evt.toUserId, evt.amount, false);
+  if (evt.type === 'hit') {
+    spawnFloatNum(evt.toUserId, evt.amount, false);
+    playHitSound(false);
+  }
+});
+
+socket.on('gift:attack', (data) => {
+  showToast('🔥 قام ' + (data.from.nickname || '') + ' بتفعيل المستوى ' + data.level, 'level');
+  playLevelUpSound();
+  if (data.to) spawnProjectile(data.from, data.to);
+});
+
+socket.on('player:eliminated', (data) => {
+  const el = bubbleEls.get(data.victim.userId);
+  if (el) {
+    el.classList.add('eliminated');
+    setTimeout(() => { el.remove(); bubbleEls.delete(data.victim.userId); }, 480);
+  }
+  const killerName = data.killer ? data.killer.nickname : null;
+  showToast(killerName ? ('⚔ ' + killerName + ' أقصى ' + data.victim.nickname) : (data.victim.nickname + ' خرج من المعركة'), 'kill');
+  playHitSound(true);
 });
 
 socket.on('round:end', (data) => {
   if (!data.winner) return;
-  document.getElementById('winnerAvatar').style.backgroundImage = `url('${data.winner.profilePictureUrl || ''}')`;
+  document.getElementById('winnerAvatar').style.backgroundImage = "url('" + (data.winner.profilePictureUrl || '') + "')";
+  document.getElementById('winnerAvatar').style.backgroundColor = data.winner.profilePictureUrl ? 'transparent' : colorForName(data.winner.nickname);
   document.getElementById('winnerName').textContent = data.winner.nickname || '';
   document.getElementById('winnerScore').textContent = data.winner.roundScore + ' نقطة';
   winnerOverlay.classList.add('show');
   setTimeout(() => winnerOverlay.classList.remove('show'), 4500);
 });
 
-socket.on('tiktok:connected', (d) => { statusLine.textContent = `متصل بـ @${d.username}`; });
+socket.on('tiktok:connected', (d) => {
+  statusLine.textContent = 'متصل بـ @' + d.username;
+  // Extra client-side safety net: clear any stale bubbles immediately when
+  // switching accounts, ahead of the next state broadcast.
+  for (const el of bubbleEls.values()) el.remove();
+  bubbleEls.clear();
+});
 socket.on('tiktok:disconnected', () => { statusLine.textContent = 'انقطع الاتصال'; });
 socket.on('tiktok:error', (d) => { statusLine.textContent = 'خطأ: ' + d.message; });
 
@@ -520,12 +829,19 @@ setInterval(() => {
   const remaining = Math.max(0, roundEndsAt - Date.now());
   const mm = String(Math.floor(remaining / 60000)).padStart(2, '0');
   const ss = String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0');
-  timerEl.textContent = `${mm}:${ss}`;
+  timerEl.textContent = mm + ':' + ss;
   timerEl.classList.toggle('urgent', remaining < 30000);
 }, 250);
 
+// ---------- Admin panel toggle ----------
+fabToggle.addEventListener('click', () => {
+  getAudioCtx(); // unlock audio on first user gesture
+  adminPanel.classList.toggle('open');
+});
+
 // ---------- Admin actions ----------
 function connectTikTok() {
+  getAudioCtx();
   const username = document.getElementById('usernameInput').value.trim();
   if (!username) return;
   fetch('/api/connect', {
@@ -534,8 +850,8 @@ function connectTikTok() {
     body: JSON.stringify({ username }),
   });
 }
-function startGame() { fetch('/api/start', { method: 'POST' }); }
-function stopGame() { fetch('/api/stop', { method: 'POST' }); }
+function startGame() { getAudioCtx(); fetch('/api/start', { method: 'POST' }); }
+function stopGame() { getAudioCtx(); fetch('/api/stop', { method: 'POST' }); }
 </script>
 </body>
 </html>
