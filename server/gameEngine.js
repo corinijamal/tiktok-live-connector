@@ -4,8 +4,9 @@
  * Individual player battle game:
  *  - A viewer joins once they've (a) posted at least one comment AND
  *    (b) tapped/liked 20+ times — whichever completes second promotes them
- *    into the arena, starting with their accumulated like count as points.
- *  - Each like (+1) adds a point to an already-joined player (green).
+ *    into the arena, starting with points = their accumulated taps × 10.
+ *  - Each like/tap is worth 10 points (POINTS_PER_LIKE) to an
+ *    already-joined player (green).
  *  - Collisions between player bubbles deal 1 damage to the collided-into
  *    player (red). If a hit brings someone to 0, they're eliminated from
  *    the arena and the attacker earns a kill.
@@ -14,7 +15,8 @@
  *    based on the gift's value.
  *  - Leveling: score grows bubble size up to a cap, then grants a
  *    rank (bronze/silver/gold/diamond/ruby/crown) with its own spike-ring
- *    color instead of continued growth.
+ *    color instead of continued growth. Thresholds are scaled to
+ *    POINTS_PER_LIKE so the number of taps needed per rank is unchanged.
  *  - Rounds last 3 minutes; highest score wins; next round auto-starts
  *    until the host stops the game.
  */
@@ -22,22 +24,25 @@
 const ARENA_RADIUS = 500; // virtual arena units
 const BUBBLE_MIN_RADIUS = 28;
 const BUBBLE_MAX_RADIUS = 70; // size cap before rank tiers kick in
-const SCORE_FOR_MAX_SIZE = 100; // points needed to reach max bubble size
+const SCORE_FOR_MAX_SIZE = 1000; // points needed to reach max bubble size
 const BASE_COLLISION_DAMAGE = 1;
 const ROUND_DURATION_MS = 3 * 60 * 1000;
 const TICK_MS = 50; // physics/collision tick rate
 const MAX_SPEED = 140; // bubble movement speed (virtual units/sec)
-const JOIN_LIKE_THRESHOLD = 20; // likes required (plus a comment) to join
+const JOIN_LIKE_THRESHOLD = 20; // raw taps required (plus a comment) to join
+const POINTS_PER_LIKE = 10; // points awarded per tap/like
 
 // Rank tiers beyond the size cap: score -> visual identity (color + spike
 // ring). Spike count escalates with rank for a clearer sense of power.
+// Thresholds are scaled to POINTS_PER_LIKE so the number of taps needed to
+// reach each rank stays the same as before the per-tap value increased.
 const RANKS = [
-  { threshold: SCORE_FOR_MAX_SIZE, id: "bronze", label: "🥉", color: "#cd7f32", spikes: 6 },
-  { threshold: 250, id: "silver", label: "🥈", color: "#c7ccd1", spikes: 7 },
-  { threshold: 500, id: "gold", label: "🥇", color: "#ffd54a", spikes: 8 },
-  { threshold: 1000, id: "diamond", label: "💎", color: "#67e8f9", spikes: 10 },
-  { threshold: 2000, id: "ruby", label: "🔴", color: "#f43f5e", spikes: 11 },
-  { threshold: 4000, id: "crown", label: "👑", color: "#facc15", spikes: 13 },
+  { threshold: SCORE_FOR_MAX_SIZE, id: "bronze", label: "🥉", color: "#cd7f32", spikes: 14 },
+  { threshold: 2500, id: "silver", label: "🥈", color: "#c7ccd1", spikes: 16 },
+  { threshold: 5000, id: "gold", label: "🥇", color: "#ffd54a", spikes: 18 },
+  { threshold: 10000, id: "diamond", label: "💎", color: "#67e8f9", spikes: 20 },
+  { threshold: 20000, id: "ruby", label: "🔴", color: "#f43f5e", spikes: 22 },
+  { threshold: 40000, id: "crown", label: "👑", color: "#facc15", spikes: 26 },
 ];
 
 function getRank(score) {
@@ -222,7 +227,11 @@ class GameEngine {
     const entry = this.pendingJoins.get(userId);
     if (!entry) return;
     if (entry.hasCommented && entry.likeCount >= JOIN_LIKE_THRESHOLD) {
-      this.ensurePlayer(userId, entry.nickname, entry.profilePictureUrl, entry.likeCount);
+      // Raw taps accumulated before joining convert to points at the same
+      // rate as taps do once in the arena, so nothing is lost by joining
+      // "late" relative to tapping while already in.
+      const startingScore = entry.likeCount * POINTS_PER_LIKE;
+      this.ensurePlayer(userId, entry.nickname, entry.profilePictureUrl, startingScore);
       this.pendingJoins.delete(userId);
     }
   }
@@ -240,12 +249,14 @@ class GameEngine {
     if (!userId) return;
     const p = this.players.get(userId);
     if (p) {
-      p.score += likeCount;
-      p.roundScore += likeCount;
-      this.pushEvent({ type: "like", userId, amount: likeCount });
+      const points = likeCount * POINTS_PER_LIKE;
+      p.score += points;
+      p.roundScore += points;
+      this.pushEvent({ type: "like", userId, amount: points });
       return;
     }
-    // Not yet joined: likes count toward the 20-like join threshold.
+    // Not yet joined: raw tap count accumulates toward the 20-tap join
+    // threshold (the threshold is a tap count, not a point total).
     const entry = this._getPending(userId, nickname, profilePictureUrl);
     entry.likeCount += likeCount;
     this._tryPromote(userId);
@@ -415,5 +426,6 @@ module.exports = {
   SCORE_FOR_MAX_SIZE,
   ROUND_DURATION_MS,
   JOIN_LIKE_THRESHOLD,
+  POINTS_PER_LIKE,
   RANKS,
 };
