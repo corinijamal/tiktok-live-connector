@@ -38,11 +38,12 @@ console.assert(ali.tapping === false, "Ali should no longer be 'tapping' after t
 console.log("5) tapping flag expires after window:", ali.tapping === false);
 
 // ---- 6. String-typed tap counts must not corrupt accumulation (concat bug) ----
-engine.handleLike("u3", "Reem", null, "6");  // string, not number
-engine.handleLike("u3", "Reem", null, "14"); // string, not number -> total raw taps = 20
+engine.handleLike("u3", "Reem", null, "3");  // string, not number
+engine.handleLike("u3", "Reem", null, "5"); // string, not number -> total raw taps = threshold
 const reem = engine.players.get("u3");
-console.assert(!!reem, "Reem should have joined after 6+14 string-typed taps reach the threshold");
-console.assert(reem && reem.roundScore === 200, `Expected Reem to start with 200 (20 taps x 10), got ${reem && reem.roundScore}`);
+console.assert(!!reem, "Reem should have joined after 3+5 string-typed taps reach the threshold");
+const expectedReemStart = JOIN_LIKE_THRESHOLD * POINTS_PER_LIKE;
+console.assert(reem && reem.roundScore === expectedReemStart, `Expected Reem to start with ${expectedReemStart}, got ${reem && reem.roundScore}`);
 console.log("6) string-typed like counts -> Reem score:", reem && reem.roundScore);
 
 // ---- 7. Collision elimination + kill credit ----
@@ -75,12 +76,13 @@ console.log("8) gift attack -> target:", giftPayload.to.userId, "| level:", gift
 
 // ---- 9. A gift from someone who already has partial tap progress but
 // hasn't joined yet must inherit that progress as their starting score ----
-engine.handleLike("u5", "Yousef", null, 15); // 15 taps, short of the 20 threshold, not joined yet
-console.assert(!engine.players.has("u5"), "Yousef should not be joined yet (only 15/20 taps)");
-engine.handleGift("u5", "Yousef", null, 10); // gifting should join him using his 15 taps, not 0
+engine.handleLike("u5", "Yousef", null, JOIN_LIKE_THRESHOLD - 3); // short of the threshold, not joined yet
+console.assert(!engine.players.has("u5"), "Yousef should not be joined yet (short of the threshold)");
+engine.handleGift("u5", "Yousef", null, 10); // gifting should join him using his partial taps, not 0
 const yousef = engine.players.get("u5");
 console.assert(!!yousef, "Yousef should be joined immediately by gifting");
-console.assert(yousef && yousef.roundScore === 150, `Expected Yousef to start with 150 (15 taps x 10) from the gift path, got ${yousef && yousef.roundScore}`);
+const expectedYousefStart = (JOIN_LIKE_THRESHOLD - 3) * POINTS_PER_LIKE;
+console.assert(yousef && yousef.roundScore === expectedYousefStart, `Expected Yousef to start with ${expectedYousefStart} from the gift path, got ${yousef && yousef.roundScore}`);
 console.log("9) gift-before-join uses pending taps -> Yousef score:", yousef && yousef.roundScore);
 
 // ---- 10. stop() clears roundEndsAt so the client-side timer stops counting ----

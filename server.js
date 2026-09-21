@@ -126,6 +126,26 @@ function findKeyDeep(obj, keyName, depth = 0) {
   return undefined;
 }
 
+// Diagnostic-only: collects every field anywhere in the payload whose KEY
+// name suggests a count/total (case-insensitive "count"/"total"/"num"),
+// so if the real per-event tap batch size lives under some other field
+// name than "likeCount", the next test's logs will surface it directly
+// instead of requiring another guess-and-check round.
+const COUNT_LIKE_KEY_RE = /count|total|num/i;
+function collectCountLikeFields(obj, path, depth, out) {
+  if (!obj || typeof obj !== "object" || depth > 4 || out.length > 20) return;
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    const fullPath = path ? path + "." + key : key;
+    if ((typeof val === "number" || typeof val === "string") && COUNT_LIKE_KEY_RE.test(key)) {
+      out.push(fullPath + "=" + JSON.stringify(val));
+    }
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      collectCountLikeFields(val, fullPath, depth + 1, out);
+    }
+  }
+}
+
 let sampleChatLogsLeft = 5;
 let sampleLikeLogsLeft = 5;
 
@@ -183,7 +203,9 @@ function connectToTikTok(username) {
     const tapCount = Number(rawTapCount) || 1;
     if (sampleLikeLogsLeft > 0) {
       sampleLikeLogsLeft--;
-      console.log("LIKE EXTRACTED:", JSON.stringify(u), "| tapCount:", tapCount);
+      const countFields = [];
+      collectCountLikeFields(data, "", 0, countFields);
+      console.log("LIKE EXTRACTED:", JSON.stringify(u), "| tapCount:", tapCount, "| count-like fields:", countFields.join(", ") || "(none found)");
     }
     engine.handleLike(u.userId, u.nickname, u.profilePictureUrl, tapCount);
   });
