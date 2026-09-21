@@ -79,4 +79,33 @@ console.assert(engine.players.size === 0, "resetPlayers should clear all active 
 console.assert(engine.pendingJoins.size === 0, "resetPlayers should clear all pending joins");
 console.log("9) resetPlayers -> players:", engine.players.size, "pending:", engine.pendingJoins.size);
 
+// ---- 10. String-typed tap counts (as TikTok's payloads sometimes send)
+// must not corrupt accumulation via string concatenation ----
+engine.handleComment("u4", "Reem", null, "hi");
+engine.handleLike("u4", "Reem", null, "6");  // string, not number
+engine.handleLike("u4", "Reem", null, "14"); // string, not number -> total raw taps = 20
+const reem = engine.players.get("u4");
+console.assert(!!reem, "Reem should have joined after 6+14 string-typed taps reach the threshold");
+console.assert(reem && reem.roundScore === 200, `Expected Reem to start with 200 (20 taps x 10), got ${reem && reem.roundScore}`);
+console.log("10) string-typed like counts -> Reem score:", reem && reem.roundScore);
+
+// ---- 11. A gift from someone who already has partial tap progress but
+// hasn't joined yet must inherit that progress as their starting score,
+// not join with 0 ----
+engine.handleComment("u5", "Yousef", null, "hey");
+engine.handleLike("u5", "Yousef", null, 15); // 15 taps, short of the 20 threshold, not joined yet
+console.assert(!engine.players.has("u5"), "Yousef should not be joined yet (only 15/20 taps)");
+engine.handleGift("u5", "Yousef", null, 10); // gifting should join him using his 15 taps, not 0
+const yousef = engine.players.get("u5");
+console.assert(!!yousef, "Yousef should be joined immediately by gifting");
+console.assert(yousef && yousef.roundScore === 150, `Expected Yousef to start with 150 (15 taps x 10) from the gift path, got ${yousef && yousef.roundScore}`);
+console.log("11) gift-before-join uses pending taps -> Yousef score:", yousef && yousef.roundScore);
+
+// ---- 12. stop() clears roundEndsAt so the client-side timer stops counting ----
+engine.start();
+console.assert(engine.roundEndsAt > 0, "roundEndsAt should be set after start()");
+engine.stop();
+console.assert(engine.roundEndsAt === 0, `Expected roundEndsAt to be reset to 0 after stop(), got ${engine.roundEndsAt}`);
+console.log("12) stop() clears roundEndsAt:", engine.roundEndsAt === 0);
+
 console.log("\nALL CHECKS RAN (see any 'Assertion failed' lines above for failures)");

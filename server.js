@@ -164,10 +164,13 @@ function connectToTikTok(username) {
     // the room-wide total), but given this library's nested payloads have
     // already surprised us twice, fall back to a deep key search rather
     // than silently defaulting to 1 tap when the top-level field is empty.
-    const tapCount = data.likeCount ?? findKeyDeep(data, "likeCount") ?? 1;
+    // Number(...) guards against the value arriving as a numeric-looking
+    // string, which several fields in these payloads have already shown.
+    const rawTapCount = data.likeCount ?? findKeyDeep(data, "likeCount") ?? 1;
+    const tapCount = Number(rawTapCount) || 1;
     if (!loggedSampleLike) {
       loggedSampleLike = true;
-      console.log("LIKE EXTRACTED:", JSON.stringify(u), "| tapCount:", tapCount, "| top-level keys:", Object.keys(data));
+      console.log("LIKE EXTRACTED:", JSON.stringify(u), "| rawTapCount:", JSON.stringify(rawTapCount), "(", typeof rawTapCount, ") | tapCount:", tapCount, "| top-level keys:", Object.keys(data));
     }
     engine.handleLike(u.userId, u.nickname, u.profilePictureUrl, tapCount);
   });
@@ -211,6 +214,11 @@ app.post("/api/start", (req, res) => {
 
 app.post("/api/stop", (req, res) => {
   engine.stop();
+  res.json({ ok: true });
+});
+
+app.post("/api/reset", (req, res) => {
+  engine.resetPlayers();
   res.json({ ok: true });
 });
 
