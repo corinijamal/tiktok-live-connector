@@ -342,17 +342,24 @@
     transform: translateX(-50%);
     background: var(--panel-bg);
     border: 1px solid rgba(251, 191, 36, 0.35);
-    border-radius: 999px;
-    padding: 9px 20px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--gold);
+    border-radius: 16px;
+    padding: 10px 22px;
     z-index: 20;
     max-width: min(92vw, 460px);
     text-align: center;
     backdrop-filter: blur(8px);
   }
-  .join-hint b { color: var(--ice); }
+  .join-hint .line-main {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gold);
+  }
+  .join-hint .line-sub {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--dim);
+    margin-top: 3px;
+  }
 
   /* ---------- Toasts ---------- */
   .toast-stack {
@@ -505,7 +512,9 @@
     .leaderboard h3 { font-size: 10.5px; }
     .lb-row { font-size: 10.5px; gap: 5px; }
     .lb-avatar { width: 18px; height: 18px; }
-    .join-hint { font-size: 11.5px; padding: 7px 14px; bottom: calc(14px + var(--safe-b)); }
+    .join-hint { padding: 7px 14px; bottom: calc(14px + var(--safe-b)); }
+    .join-hint .line-main { font-size: 11.5px; }
+    .join-hint .line-sub { font-size: 10px; }
     .toast-stack { top: calc(54px + var(--safe-t)); }
     .toast { font-size: 11px; padding: 6px 12px; }
     .fab-toggle { width: 42px; height: 42px; font-size: 17px; right: 12px; }
@@ -534,7 +543,10 @@
     <div class="arena" id="arena"></div>
   </div>
 
-  <div class="join-hint">انقر على الشاشة ❤️ لتدخل ساحة المعركة 🔥</div>
+  <div class="join-hint">
+    <div class="line-main">انقر على الشاشة للدخول إلى الساحة</div>
+    <div class="line-sub">إرسال الهدايا يزيد النقاط والمستوى</div>
+  </div>
 
   <div class="winner-overlay" id="winnerOverlay">
     <div class="winner-avatar" id="winnerAvatar"></div>
@@ -824,8 +836,13 @@ socket.on('event', (evt) => {
 });
 
 socket.on('gift:attack', (data) => {
-  showToast('🔥 قام ' + (data.from.nickname || '') + ' بتفعيل المستوى ' + data.level, 'level');
-  playLevelUpSound();
+  // The level-up toast/sound represent activating the gift's power once,
+  // not each individual shot in the barrage — only the barrage's first
+  // shot carries this flag.
+  if (data.showLevelToast) {
+    showToast('🔥 قام ' + (data.from.nickname || '') + ' بتفعيل المستوى ' + data.level, 'level');
+    playLevelUpSound();
+  }
   if (data.to) spawnProjectile(data.from, data.to);
 });
 
