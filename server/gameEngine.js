@@ -70,6 +70,16 @@ function levelForCoinValue(coinValue) {
   return 1;
 }
 
+// TikTok's payloads have repeatedly shown numeric-looking fields arriving
+// as JSON strings (e.g. "2" instead of 2). Left uncoerced, accumulating
+// such a value with += performs string concatenation instead of addition
+// (0 + "6" -> "06"), silently corrupting every count derived from it. Every
+// tap/coin count that reaches the engine is funneled through this first.
+function toPositiveInt(value, fallback) {
+  const n = typeof value === "number" ? value : parseFloat(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : fallback;
+}
+
 class Player {
   constructor(userId, nickname, profilePictureUrl) {
     this.userId = userId;
@@ -150,6 +160,7 @@ class GameEngine {
     clearTimeout(this.roundTimer);
     this.physicsTimer = null;
     this.roundTimer = null;
+    this.roundEndsAt = 0; // otherwise the client keeps counting down a stale deadline
     this.broadcastState();
   }
 
@@ -247,9 +258,10 @@ class GameEngine {
 
   handleLike(userId, nickname, profilePictureUrl, likeCount = 1) {
     if (!userId) return;
+    const taps = toPositiveInt(likeCount, 1);
     const p = this.players.get(userId);
     if (p) {
-      const points = likeCount * POINTS_PER_LIKE;
+      const points = taps * POINTS_PER_LIKE;
       p.score += points;
       p.roundScore += points;
       this.pushEvent({ type: "like", userId, amount: points });
@@ -258,7 +270,7 @@ class GameEngine {
     // Not yet joined: raw tap count accumulates toward the 20-tap join
     // threshold (the threshold is a tap count, not a point total).
     const entry = this._getPending(userId, nickname, profilePictureUrl);
-    entry.likeCount += likeCount;
+    entry.likeCount += taps;
     this._tryPromote(userId);
   }
 
@@ -266,8 +278,20 @@ class GameEngine {
   // gifter), dealing damage equal to the gift's coin value, and report an
   // "activated level" derived from that value for the UI toast.
   handleGift(userId, nickname, profilePictureUrl, coinValue) {
-    const attacker = this.ensurePlayer(userId, nickname, profilePictureUrl);
-    const level = levelForCoinValue(coinValue);
+    const coins = toPositiveInt(coinValue, 1);
+    let attacker = this.players.get(userId);
+    if (!attacker) {
+      // A gift is at least as strong a signal of engagement as the normal
+      // comment+20-tap join condition, so it's allowed to join the gifter
+      // immediately — but any taps/comment they'd already racked up toward
+      // the normal threshold must still convert to their starting score,
+      // instead of being discarded in favor of a flat 0.
+      const pending = this.pendingJoins.get(userId);
+      const startingScore = pending ? pending.likeCount * POINTS_PER_LIKE : 0;
+      attacker = this.ensurePlayer(userId, nickname, profilePictureUrl, startingScore);
+      this.pendingJoins.delete(userId);
+    }
+    const level = levelForCoinValue(coins);
 
     let target = null;
     for (const p of this.players.values()) {
@@ -277,8 +301,8 @@ class GameEngine {
 
     let eliminated = false;
     if (target) {
-      target.roundScore = Math.max(0, target.roundScore - coinValue);
-      this.pushEvent({ type: "hit", fromUserId: attacker.userId, toUserId: target.userId, amount: coinValue });
+      target.roundScore = Math.max(0, target.roundScore - coins);
+      this.pushEvent({ type: "hit", fromUserId: attacker.userId, toUserId: target.userId, amount: coins });
       if (target.roundScore <= 0) {
         this.eliminate(target, attacker);
         eliminated = true;
@@ -288,7 +312,7 @@ class GameEngine {
     this.io.emit("gift:attack", {
       from: { userId: attacker.userId, nickname: attacker.nickname, x: attacker.x, y: attacker.y },
       to: target ? { userId: target.userId, nickname: target.nickname, x: target.x, y: target.y } : null,
-      amount: coinValue,
+      amount: coins,
       level,
       eliminated,
     });
