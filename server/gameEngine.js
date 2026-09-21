@@ -2,17 +2,20 @@
  * Battle Arena Game Engine
  * -------------------------
  * Individual player battle game:
- *  - A viewer joins purely by tapping/liking 20+ times — no comment
+ *  - A viewer joins purely by tapping/liking 8+ times — no comment
  *    required — starting with points = their accumulated taps × 10.
  *  - Each like/tap is worth 10 points (POINTS_PER_LIKE) to an
  *    already-joined player (green), and marks them as "tapping" for a
  *    few seconds (drives the spike-ring blade visual, see below).
- *  - Collisions between player bubbles deal 1 damage to the collided-into
- *    player (red). If a hit brings someone to 0, they're eliminated from
- *    the arena and the attacker earns a kill.
- *  - Gifts fire a direct attack (damage = the gift's coin value) at the
- *    current top-scoring player, and show the gifter's activated level
- *    based on the gift's value.
+ *  - Collisions between player bubbles deal 10 damage to the collided-into
+ *    player (red) — proportionate to a single tap's worth of points. If a
+ *    hit brings someone to 0, they're eliminated from the arena and the
+ *    attacker earns a kill.
+ *  - Gifts fire a sustained barrage of projectiles (GIFT_SHOTS_PER_SECOND
+ *    shots/sec for GIFT_BARRAGE_DURATION_MS), each dealing the gift's full
+ *    coin value in damage to whoever is currently the top scorer
+ *    (re-targeted every shot), and show the gifter's activated level once
+ *    at the start of the barrage.
  *  - Leveling: score grows bubble size up to a cap, then grants a rank
  *    (bronze/silver/gold/diamond/ruby/crown) that colors the spike-ring
  *    blade. The blade itself only shows while the player is actively
@@ -28,7 +31,7 @@ const ARENA_RADIUS = 500; // virtual arena units
 const BUBBLE_MIN_RADIUS = 28;
 const BUBBLE_MAX_RADIUS = 70; // size cap before rank tiers kick in
 const SCORE_FOR_MAX_SIZE = 1000; // points needed to reach max bubble size
-const BASE_COLLISION_DAMAGE = 1;
+const BASE_COLLISION_DAMAGE = 10; // matches POINTS_PER_LIKE: a hit undoes ~1 tap's worth
 const ROUND_DURATION_MS = 3 * 60 * 1000;
 const TICK_MS = 50; // physics/collision tick rate
 const MAX_SPEED = 140; // bubble movement speed (virtual units/sec)
@@ -37,6 +40,8 @@ const POINTS_PER_LIKE = 10; // points awarded per tap/like
 const ACTIVE_TAP_WINDOW_MS = 3000; // how long the blade stays visible after the last tap
 const DEFAULT_BLADE_COLOR = "#67e8f9";
 const DEFAULT_BLADE_SPIKES = 10;
+const GIFT_BARRAGE_DURATION_MS = 10 * 1000; // gifts fire a sustained barrage, not one shot
+const GIFT_SHOTS_PER_SECOND = 3;
 
 // Rank tiers beyond the size cap: score -> visual identity (color + spike
 // ring). Spike count escalates with rank for a clearer sense of power.
@@ -161,6 +166,10 @@ class GameEngine {
     // so a busy stream doesn't flood the logs forever, but generous enough
     // to watch several viewers' progress toward the 20-tap threshold.
     this.pendingLogsLeft = 50;
+    // Interval IDs for in-flight gift barrages (see handleGift), tracked so
+    // stop()/resetPlayers() can cancel them instead of leaving them firing
+    // into a stopped or cleared game.
+    this.activeBarrages = new Set();
   }
 
   // ---------- Round lifecycle ----------
@@ -179,6 +188,7 @@ class GameEngine {
     this.physicsTimer = null;
     this.roundTimer = null;
     this.roundEndsAt = 0; // otherwise the client keeps counting down a stale deadline
+    this._clearBarrages();
     this.broadcastState();
   }
 
@@ -306,50 +316,73 @@ class GameEngine {
     this._tryPromote(userId);
   }
 
-  // Gifts fire a direct attack on the current top scorer (excluding the
-  // gifter), dealing damage equal to the gift's coin value, and report an
-  // "activated level" derived from that value for the UI toast.
+  // Gifts fire a sustained barrage of projectiles — not one shot — at
+  // whoever is the current top scorer (excluding the gifter), retargeted
+  // on every shot so a barrage that finishes off the leader keeps firing
+  // at the new one. Each shot deals the gift's full coin value in damage,
+  // for GIFT_SHOTS_PER_SECOND shots/sec over GIFT_BARRAGE_DURATION_MS.
+  // The "activated level" toast fires once, on the barrage's first shot.
   handleGift(userId, nickname, profilePictureUrl, coinValue) {
     const coins = toPositiveInt(coinValue, 1);
     let attacker = this.players.get(userId);
     if (!attacker) {
       // A gift is at least as strong a signal of engagement as the normal
-      // comment+20-tap join condition, so it's allowed to join the gifter
-      // immediately — but any taps/comment they'd already racked up toward
-      // the normal threshold must still convert to their starting score,
-      // instead of being discarded in favor of a flat 0.
+      // tap-join condition, so it's allowed to join the gifter immediately
+      // — but any taps they'd already racked up toward the threshold must
+      // still convert to their starting score, instead of being discarded.
       const pending = this.pendingJoins.get(userId);
       const startingScore = pending ? pending.likeCount * POINTS_PER_LIKE : 0;
       attacker = this.ensurePlayer(userId, nickname, profilePictureUrl, startingScore);
       this.pendingJoins.delete(userId);
     }
+    const attackerId = attacker.userId;
     const level = levelForCoinValue(coins);
+    const totalShots = Math.round((GIFT_BARRAGE_DURATION_MS / 1000) * GIFT_SHOTS_PER_SECOND);
+    let shotsFired = 0;
 
-    let target = null;
-    for (const p of this.players.values()) {
-      if (p.userId === attacker.userId) continue;
-      if (!target || p.roundScore > target.roundScore) target = p;
-    }
+    const fireShot = () => {
+      const liveAttacker = this.players.get(attackerId);
+      if (!liveAttacker) return; // attacker left the arena mid-barrage; skip silently
 
-    let eliminated = false;
-    if (target) {
-      target.roundScore = Math.max(0, target.roundScore - coins);
-      this.pushEvent({ type: "hit", fromUserId: attacker.userId, toUserId: target.userId, amount: coins });
-      if (target.roundScore <= 0) {
-        this.eliminate(target, attacker);
-        eliminated = true;
+      let target = null;
+      for (const p of this.players.values()) {
+        if (p.userId === attackerId) continue;
+        if (!target || p.roundScore > target.roundScore) target = p;
       }
-    }
 
-    this.io.emit("gift:attack", {
-      from: { userId: attacker.userId, nickname: attacker.nickname, x: attacker.x, y: attacker.y },
-      to: target ? { userId: target.userId, nickname: target.nickname, x: target.x, y: target.y } : null,
-      amount: coins,
-      level,
-      eliminated,
-    });
+      let eliminated = false;
+      if (target) {
+        target.roundScore = Math.max(0, target.roundScore - coins);
+        this.pushEvent({ type: "hit", fromUserId: attackerId, toUserId: target.userId, amount: coins });
+        if (target.roundScore <= 0) {
+          this.eliminate(target, liveAttacker);
+          eliminated = true;
+        }
+      }
 
-    this.broadcastState();
+      this.io.emit("gift:attack", {
+        from: { userId: liveAttacker.userId, nickname: liveAttacker.nickname, x: liveAttacker.x, y: liveAttacker.y },
+        to: target ? { userId: target.userId, nickname: target.nickname, x: target.x, y: target.y } : null,
+        amount: coins,
+        level,
+        eliminated,
+        showLevelToast: shotsFired === 0,
+      });
+
+      this.broadcastState();
+      shotsFired++;
+    };
+
+    fireShot();
+    const intervalId = setInterval(() => {
+      if (shotsFired >= totalShots) {
+        clearInterval(intervalId);
+        this.activeBarrages.delete(intervalId);
+        return;
+      }
+      fireShot();
+    }, 1000 / GIFT_SHOTS_PER_SECOND);
+    this.activeBarrages.add(intervalId);
   }
 
   eliminate(victim, killer) {
@@ -374,7 +407,13 @@ class GameEngine {
   resetPlayers() {
     this.players.clear();
     this.pendingJoins.clear();
+    this._clearBarrages();
     this.broadcastState();
+  }
+
+  _clearBarrages() {
+    for (const id of this.activeBarrages) clearInterval(id);
+    this.activeBarrages.clear();
   }
 
   // ---------- Physics / collisions ----------
@@ -486,5 +525,8 @@ module.exports = {
   ACTIVE_TAP_WINDOW_MS,
   DEFAULT_BLADE_COLOR,
   DEFAULT_BLADE_SPIKES,
+  BASE_COLLISION_DAMAGE,
+  GIFT_BARRAGE_DURATION_MS,
+  GIFT_SHOTS_PER_SECOND,
   RANKS,
 };
