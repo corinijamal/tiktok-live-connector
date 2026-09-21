@@ -48,10 +48,23 @@ function findUserDeep(obj, depth = 0) {
 }
 
 function extractUser(data) {
-  // Try the documented flat/nested shapes first (cheap, and correct for
-  // GIFT events in practice), then fall back to the deep search.
-  const direct = data.user || null;
-  const user = direct && (direct.nickname || direct.uniqueId) ? direct : findUserDeep(data) || {};
+  // Try progressively less certain shapes, in order of trust: the
+  // documented nested shape, then the documented flat shape (fields
+  // directly on data — this is how LIKE events are commonly documented,
+  // and skipping straight to the deep search when data.user is absent was
+  // causing the deep search to sometimes latch onto an unrelated nested
+  // "user-like" object instead of the real flat fields sitting right
+  // there on data), and only then the recursive deep search as a last
+  // resort — since a wrong deep match silently gives different taps from
+  // the same real viewer different extracted identities.
+  let user = null;
+  if (data.user && (data.user.nickname || data.user.uniqueId)) {
+    user = data.user;
+  } else if (data.uniqueId || data.nickname) {
+    user = data;
+  } else {
+    user = findUserDeep(data) || {};
+  }
 
   const identity =
     user.uniqueId || user.userId || user.id || data.uniqueId || data.userId || null;
@@ -113,8 +126,8 @@ function findKeyDeep(obj, keyName, depth = 0) {
   return undefined;
 }
 
-let loggedSampleChat = false;
-let loggedSampleLike = false;
+let sampleChatLogsLeft = 5;
+let sampleLikeLogsLeft = 5;
 
 function connectToTikTok(username) {
   if (tiktokConnection) {
@@ -135,8 +148,8 @@ function connectToTikTok(username) {
   // nothing throws "Cannot read properties of undefined").
   tiktokConnection = new TikTokLiveConnection(username, {});
   connectedUsername = username;
-  loggedSampleChat = false;
-  loggedSampleLike = false;
+  sampleChatLogsLeft = 5;
+  sampleLikeLogsLeft = 5;
 
   tiktokConnection
     .connect()
@@ -151,9 +164,9 @@ function connectToTikTok(username) {
 
   tiktokConnection.on(WebcastEvent.CHAT, (data) => {
     const u = extractUser(data);
-    if (!loggedSampleChat) {
-      loggedSampleChat = true;
-      console.log("CHAT EXTRACTED:", JSON.stringify(u), "| top-level keys:", Object.keys(data));
+    if (sampleChatLogsLeft > 0) {
+      sampleChatLogsLeft--;
+      console.log("CHAT EXTRACTED:", JSON.stringify(u));
     }
     engine.handleComment(u.userId, u.nickname, u.profilePictureUrl, data.comment);
   });
@@ -168,9 +181,9 @@ function connectToTikTok(username) {
     // string, which several fields in these payloads have already shown.
     const rawTapCount = data.likeCount ?? findKeyDeep(data, "likeCount") ?? 1;
     const tapCount = Number(rawTapCount) || 1;
-    if (!loggedSampleLike) {
-      loggedSampleLike = true;
-      console.log("LIKE EXTRACTED:", JSON.stringify(u), "| rawTapCount:", JSON.stringify(rawTapCount), "(", typeof rawTapCount, ") | tapCount:", tapCount, "| top-level keys:", Object.keys(data));
+    if (sampleLikeLogsLeft > 0) {
+      sampleLikeLogsLeft--;
+      console.log("LIKE EXTRACTED:", JSON.stringify(u), "| tapCount:", tapCount);
     }
     engine.handleLike(u.userId, u.nickname, u.profilePictureUrl, tapCount);
   });
