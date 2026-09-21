@@ -5,7 +5,7 @@ const { TikTokLiveConnection, WebcastEvent } = require("tiktok-live-connector");
 const { GameEngine } = require("./server/gameEngine");
 
 const PORT = process.env.PORT || 3000;
-const JOIN_KEYWORD = "اا";
+const JOIN_KEYWORD = "انضم";
 
 const app = express();
 app.use(express.static("public"));
@@ -19,18 +19,44 @@ const engine = new GameEngine(io);
 let tiktokConnection = null;
 let connectedUsername = null;
 
-// tiktok-live-connector v2.x: user fields live under data.user, per the
-// underlying protobuf schema (userId, nickname, profilePicture.urls[],
-// uniqueId). Earlier docs/snippets show a flatter or differently-named
-// shape, so every field here falls back through multiple possible
-// locations rather than trusting a single path.
+// tiktok-live-connector v2.4.4's *actual* runtime payloads do not reliably
+// match its published documentation. Sample logs captured from this app
+// showed the LIKE event's real sender buried several levels deep (inside
+// data.common.specifiedDisplayText[].pieces[].userValue.user) instead of on
+// a flat data.user like the docs describe. Rather than hard-code one path
+// that may break again on the next library update, we recursively search
+// the whole payload for the first object that looks like a TikTok user
+// (has a nickname/uniqueId alongside an id/userId) and use that.
+function findUserDeep(obj, depth = 0) {
+  if (!obj || typeof obj !== "object" || depth > 8) return null;
+
+  // A plausible "user" object: has some form of id AND some form of name.
+  const hasId = obj.id || obj.userId || obj.uniqueId;
+  const hasName = obj.nickname || obj.uniqueId;
+  if (hasId && hasName) return obj;
+
+  for (const key of Object.keys(obj)) {
+    // Skip huge/irrelevant branches to keep this fast and avoid false
+    // positives from unrelated nested "user"-shaped objects (e.g. badges).
+    if (key === "userBadges" || key === "borderList" || key === "badgeList") continue;
+    const val = obj[key];
+    if (val && typeof val === "object") {
+      const found = findUserDeep(val, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 function extractUser(data) {
-  const user = data.user || {};
-  // uniqueId (the permanent @handle) is the most reliable identity field
-  // across versions; userId can be missing or inconsistent, and using
-  // undefined as a Map key collapses every player into a single entry.
+  // Try the documented flat/nested shapes first (cheap, and correct for
+  // GIFT events in practice), then fall back to the deep search.
+  const direct = data.user || null;
+  const user = direct && (direct.nickname || direct.uniqueId) ? direct : findUserDeep(data) || {};
+
   const identity =
-    user.uniqueId || user.userId || data.uniqueId || data.userId || null;
+    user.uniqueId || user.userId || user.id || data.uniqueId || data.userId || null;
+
   return {
     userId: identity,
     nickname: user.nickname || user.uniqueId || data.nickname || data.uniqueId || identity,
@@ -39,8 +65,34 @@ function extractUser(data) {
       (user.profilePicture && user.profilePicture.urls && user.profilePicture.urls[0]) ||
       (user.profilePictureUrls && user.profilePictureUrls[0]) ||
       data.profilePictureUrl ||
+      findAvatarUrlDeep(data) ||
       null,
   };
+}
+
+// Last-resort avatar search: scans the whole payload for any string that
+// looks like a TikTok CDN image URL, regardless of which key holds it.
+// Sample payloads showed the matched user object's own picture fields
+// (profilePicture, deprecated9/10/11, etc.) can arrive empty even when a
+// real avatar exists elsewhere in the message, so this is broader than
+// findUserDeep on purpose.
+const AVATAR_URL_RE = /^https?:\/\/[^\s"]*tiktokcdn[^\s"]*\.(webp|jpe?g|png)(\?[^\s"]*)?$/i;
+
+function findAvatarUrlDeep(obj, depth = 0) {
+  if (!obj || typeof obj !== "object" || depth > 8) return null;
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (typeof val === "string" && AVATAR_URL_RE.test(val)) return val;
+    if (Array.isArray(val)) {
+      for (const item of val) {
+        if (typeof item === "string" && AVATAR_URL_RE.test(item)) return item;
+      }
+    } else if (val && typeof val === "object") {
+      const found = findAvatarUrlDeep(val, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 let loggedSampleChat = false;
@@ -76,20 +128,20 @@ function connectToTikTok(username) {
     });
 
   tiktokConnection.on(WebcastEvent.CHAT, (data) => {
+    const u = extractUser(data);
     if (!loggedSampleChat) {
       loggedSampleChat = true;
-      console.log("SAMPLE CHAT PAYLOAD:", JSON.stringify(data, null, 2));
+      console.log("CHAT EXTRACTED:", JSON.stringify(u), "| top-level keys:", Object.keys(data));
     }
-    const u = extractUser(data);
     engine.handleChatJoin(u.userId, u.nickname, u.profilePictureUrl, data.comment, JOIN_KEYWORD);
   });
 
   tiktokConnection.on(WebcastEvent.LIKE, (data) => {
+    const u = extractUser(data);
     if (!loggedSampleLike) {
       loggedSampleLike = true;
-      console.log("SAMPLE LIKE PAYLOAD:", JSON.stringify(data, null, 2));
+      console.log("LIKE EXTRACTED:", JSON.stringify(u), "| top-level keys:", Object.keys(data));
     }
-    const u = extractUser(data);
     engine.handleLike(u.userId, u.nickname, u.profilePictureUrl, data.likeCount || 1);
   });
 
