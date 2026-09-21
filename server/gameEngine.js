@@ -146,7 +146,7 @@ class GameEngine {
   constructor(io) {
     this.io = io;
     this.players = new Map(); // userId -> Player (active, in-arena)
-    // userId -> { hasCommented, likeCount, nickname, profilePictureUrl }
+    // userId -> { likeCount, nickname, profilePictureUrl }
     // Tracks viewers working toward the join threshold before they have a
     // bubble in the arena.
     this.pendingJoins = new Map();
@@ -157,6 +157,10 @@ class GameEngine {
     this.physicsTimer = null;
     this.roundTimer = null;
     this.leaderboardHistory = []; // past round winners
+    // Diagnostic budget for logging pending-join tap accumulation — capped
+    // so a busy stream doesn't flood the logs forever, but generous enough
+    // to watch several viewers' progress toward the 20-tap threshold.
+    this.pendingLogsLeft = 50;
   }
 
   // ---------- Round lifecycle ----------
@@ -259,6 +263,13 @@ class GameEngine {
       const p = this.ensurePlayer(userId, entry.nickname, entry.profilePictureUrl, startingScore);
       p.lastTapAt = Date.now(); // they just tapped their way in — blade shows immediately
       this.pendingJoins.delete(userId);
+      if (this.pendingLogsLeft > 0) {
+        this.pendingLogsLeft--;
+        console.log(`PENDING JOIN: ${entry.nickname} (${userId}) reached ${entry.likeCount} taps -> PROMOTED with ${startingScore} points`);
+      }
+    } else if (this.pendingLogsLeft > 0) {
+      this.pendingLogsLeft--;
+      console.log(`PENDING JOIN: ${entry.nickname} (${userId}) now at ${entry.likeCount}/${JOIN_LIKE_THRESHOLD} taps`);
     }
   }
 
