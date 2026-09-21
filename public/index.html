@@ -633,25 +633,49 @@ function colorForName(name) {
   return palette[hash % palette.length];
 }
 
-// ---------- Spike ring (rank tiers) ----------
-function buildSpikeSVG(bubbleRadiusPx, spikeCount, color) {
-  const spikeLen = Math.max(7, bubbleRadiusPx * 0.32);
-  const outer = bubbleRadiusPx + spikeLen;
+// ---------- Spike ring (rank tiers) — metallic saw-blade look ----------
+function sanitizeId(str) {
+  return String(str).replace(/[^a-zA-Z0-9_-]/g, '') || 'x';
+}
+
+function buildSpikeSVG(bubbleRadiusPx, spikeCount, color, uid) {
+  const gradId = 'bladeGrad_' + uid;
+  const toothLenLong = Math.max(9, bubbleRadiusPx * 0.46);
+  const toothLenShort = toothLenLong * 0.52;
+  const outer = bubbleRadiusPx + toothLenLong;
   const size = outer * 2;
   const cx = outer, cy = outer;
-  let shapes = '';
+  let teeth = '';
   for (let i = 0; i < spikeCount; i++) {
     const angle = (i / spikeCount) * Math.PI * 2;
-    const halfBase = (Math.PI / spikeCount) * 0.36;
-    const tipX = cx + Math.cos(angle) * outer;
-    const tipY = cy + Math.sin(angle) * outer;
+    const len = (i % 2 === 0) ? toothLenLong : toothLenShort;
+    const toothOuter = bubbleRadiusPx + len;
+    const halfBase = (Math.PI / spikeCount) * 0.42;
+    // Asymmetric hook: the tip leans toward the leading edge, like a real
+    // saw tooth, instead of a plain isoceles thorn.
+    const tipAngle = angle + halfBase * 0.35;
+    const tipX = cx + Math.cos(tipAngle) * toothOuter;
+    const tipY = cy + Math.sin(tipAngle) * toothOuter;
     const b1x = cx + Math.cos(angle - halfBase) * bubbleRadiusPx;
     const b1y = cy + Math.sin(angle - halfBase) * bubbleRadiusPx;
     const b2x = cx + Math.cos(angle + halfBase) * bubbleRadiusPx;
     const b2y = cy + Math.sin(angle + halfBase) * bubbleRadiusPx;
-    shapes += '<polygon points="' + tipX + ',' + tipY + ' ' + b1x + ',' + b1y + ' ' + b2x + ',' + b2y + '" fill="' + color + '" opacity="0.9"/>';
+    teeth += '<polygon points="' + tipX + ',' + tipY + ' ' + b1x + ',' + b1y + ' ' + b2x + ',' + b2y +
+      '" fill="url(#' + gradId + ')" stroke="' + color + '" stroke-width="1" stroke-linejoin="round"/>';
   }
-  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" style="filter:drop-shadow(0 0 5px ' + color + ')">' + shapes + '</svg>';
+  const collar = '<circle cx="' + cx + '" cy="' + cy + '" r="' + (bubbleRadiusPx * 0.95) +
+    '" fill="none" stroke="' + color + '" stroke-width="2.5" opacity="0.9"/>';
+  const collarInner = '<circle cx="' + cx + '" cy="' + cy + '" r="' + (bubbleRadiusPx * 0.86) +
+    '" fill="none" stroke="' + color + '" stroke-width="1" opacity="0.45"/>';
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size +
+    '" style="filter:drop-shadow(0 0 6px ' + color + ')">' +
+    '<defs><linearGradient id="' + gradId + '" x1="0%" y1="0%" x2="100%" y2="100%">' +
+      '<stop offset="0%" stop-color="#f1f1f6"/>' +
+      '<stop offset="45%" stop-color="#9a9aa8"/>' +
+      '<stop offset="100%" stop-color="#45454f"/>' +
+    '</linearGradient></defs>' +
+    teeth + collar + collarInner +
+  '</svg>';
 }
 
 function updateSpikes(el, player, sizePx) {
@@ -663,8 +687,9 @@ function updateSpikes(el, player, sizePx) {
   const key = player.rankId + ':' + Math.round(sizePx);
   if (layer.dataset.rank === key) return;
   layer.dataset.rank = key;
-  layer.innerHTML = buildSpikeSVG(sizePx / 2, player.rankSpikes || 6, player.rankColor || '#a78bfa');
+  layer.innerHTML = buildSpikeSVG(sizePx / 2, player.rankSpikes || 14, player.rankColor || '#a78bfa', sanitizeId(player.userId));
 }
+
 
 function ensureBubbleEl(player) {
   let el = bubbleEls.get(player.userId);
