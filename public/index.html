@@ -171,6 +171,14 @@
     font-size: 16px;
     filter: drop-shadow(0 0 4px rgba(0,0,0,0.6));
   }
+  .bubble .initial {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color: rgba(255, 255, 255, 0.9);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+  }
 
   .float-num {
     position: absolute;
@@ -228,6 +236,15 @@
     background-position: center;
     flex-shrink: 0;
     border: 1px solid rgba(168,105,255,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lb-initial {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.9);
   }
   .lb-name {
     flex: 1;
@@ -402,11 +419,23 @@ function ensureBubbleEl(player) {
       <div class="score-tag"></div>
       <div class="name-tag"></div>
       <div class="badge"></div>
+      <div class="initial"></div>
     `;
     arena.appendChild(el);
     bubbleEls.set(player.userId, el);
   }
   return el;
+}
+
+// Deterministic background color per player, used when no profile photo is
+// available so the bubble still reads as "this player" rather than a blank
+// circle (TikTok doesn't always send a photo URL on every event type).
+function colorForName(name) {
+  const palette = ['#7b3ff2', '#c9376a', '#1f8a70', '#b8860b', '#2a6f97', '#9d4edd'];
+  let hash = 0;
+  const str = name || '?';
+  for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  return palette[hash % palette.length];
 }
 
 function renderState(state) {
@@ -425,11 +454,13 @@ function renderState(state) {
     el.style.width = size + 'px';
     el.style.height = size + 'px';
     el.style.backgroundImage = p.profilePictureUrl ? `url('${p.profilePictureUrl}')` : 'none';
-    el.style.backgroundColor = p.profilePictureUrl ? 'transparent' : '#3a2a55';
+    el.style.backgroundColor = p.profilePictureUrl ? 'transparent' : colorForName(p.nickname);
     el.classList.toggle('boosted', p.boosted);
     el.querySelector('.score-tag').textContent = p.roundScore;
     el.querySelector('.name-tag').textContent = p.nickname || '';
     el.querySelector('.badge').textContent = p.badge || '';
+    const initialEl = el.querySelector('.initial');
+    initialEl.textContent = p.profilePictureUrl ? '' : (p.nickname || '?').trim().charAt(0).toUpperCase();
   });
 
   // remove stale bubbles
@@ -444,7 +475,7 @@ function renderState(state) {
   lbList.innerHTML = state.players.slice(0, 5).map((p, i) => `
     <div class="lb-row">
       <div class="lb-rank">${i + 1}</div>
-      <div class="lb-avatar" style="background-image:url('${p.profilePictureUrl || ''}')"></div>
+      <div class="lb-avatar" style="background-image:url('${p.profilePictureUrl || ''}'); background-color:${p.profilePictureUrl ? 'transparent' : colorForName(p.nickname)}">${p.profilePictureUrl ? '' : `<span class="lb-initial">${(p.nickname || '?').trim().charAt(0).toUpperCase()}</span>`}</div>
       <div class="lb-name">${p.nickname || ''}</div>
       <div class="lb-score">${p.roundScore}</div>
     </div>
