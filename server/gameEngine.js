@@ -3,19 +3,22 @@
  * -------------------------
  * Individual player battle game:
  *  - A viewer joins purely by tapping/liking 8+ times — no comment
- *    required — starting with points = their accumulated taps × 10.
- *  - Each like/tap is worth 10 points (POINTS_PER_LIKE) to an
+ *    required — starting with points = their accumulated taps × 1.5.
+ *  - Each like/tap is worth 1.5 points (POINTS_PER_LIKE) to an
  *    already-joined player (green), and marks them as "tapping" for a
  *    few seconds (drives the spike-ring blade visual, see below).
- *  - Collisions between player bubbles deal 10 damage to the collided-into
- *    player (red) — proportionate to a single tap's worth of points. If a
+ *  - Collisions deal (BASE_COLLISION_DAMAGE + attacker's attackLevel)
+ *    damage to the collided-into player (red) — base damage is 1. If a
  *    hit brings someone to 0, they're eliminated from the arena and the
  *    attacker earns a kill.
- *  - Gifts fire a sustained barrage of projectiles (GIFT_SHOTS_PER_SECOND
- *    shots/sec for GIFT_BARRAGE_DURATION_MS), each dealing the gift's full
- *    coin value in damage to whoever is currently the top scorer
- *    (re-targeted every shot), and show the gifter's activated level once
- *    at the start of the barrage.
+ *  - Gifts can do either or both, per the host's configured giftMode:
+ *      level: +1 attackLevel per coin (permanent extra collision damage
+ *             for the rest of the round), announced via gift:levelup.
+ *      shots: a sustained barrage of projectiles (GIFT_SHOTS_PER_SECOND
+ *             shots/sec for GIFT_BARRAGE_DURATION_MS), each dealing the
+ *             gift's full coin value in damage to whoever currently has
+ *             the highest attackLevel among enemies (re-targeted every
+ *             shot).
  *  - Leveling: score grows bubble size up to a cap, then grants a rank
  *    (bronze/silver/gold/diamond/ruby/crown) that colors the spike-ring
  *    blade. The blade itself only shows while the player is actively
@@ -23,38 +26,41 @@
  *    activity indicator, not a permanent badge — and fades out a few
  *    seconds after tapping stops. An unranked player who is tapping still
  *    gets a blade, in a default color.
- *  - Rounds last 3 minutes; highest score wins; next round auto-starts
- *    until the host stops the game.
+ *  - Rounds last 3 minutes by default (configurable); highest score wins;
+ *    next round auto-starts until the host stops the game.
  */
 
 const ARENA_RADIUS = 500; // virtual arena units
 const BUBBLE_MIN_RADIUS = 28;
 const BUBBLE_MAX_RADIUS = 70; // size cap before rank tiers kick in
-const SCORE_FOR_MAX_SIZE = 1000; // points needed to reach max bubble size
-const BASE_COLLISION_DAMAGE = 10; // matches POINTS_PER_LIKE: a hit undoes ~1 tap's worth
+const SCORE_FOR_MAX_SIZE = 150; // points needed to reach max bubble size
+const BASE_COLLISION_DAMAGE = 1; // a hit's base cost, before any attackLevel bonus
 const ROUND_DURATION_MS = 3 * 60 * 1000;
 const MIN_ROUND_DURATION_MS = 15 * 1000; // safety floor for setConfig()
 const TICK_MS = 50; // physics/collision tick rate
-const MAX_SPEED = 140; // bubble movement speed (virtual units/sec)
+const MAX_SPEED = 140; // default bubble movement speed (virtual units/sec) — configurable
+const MIN_SPEED_LIMIT = 20; // safety floor for setConfig()
+const MAX_SPEED_LIMIT = 600; // safety ceiling for setConfig()
 const JOIN_LIKE_THRESHOLD = 8; // raw taps required to join (taps only, no comment)
-const POINTS_PER_LIKE = 10; // points awarded per tap/like
+const POINTS_PER_LIKE = 1.5; // points awarded per tap/like
 const ACTIVE_TAP_WINDOW_MS = 3000; // how long the blade stays visible after the last tap
 const DEFAULT_BLADE_COLOR = "#67e8f9";
 const DEFAULT_BLADE_SPIKES = 10;
-const GIFT_BARRAGE_DURATION_MS = 10 * 1000; // gifts fire a sustained barrage, not one shot
+const GIFT_BARRAGE_DURATION_MS = 10 * 1000; // "shots" gift mode: sustained barrage, not one shot
 const GIFT_SHOTS_PER_SECOND = 3;
 
 // Rank tiers beyond the size cap: score -> visual identity (color + spike
 // ring). Spike count escalates with rank for a clearer sense of power.
-// Thresholds are scaled to POINTS_PER_LIKE so the number of taps needed to
-// reach each rank stays the same as before the per-tap value increased.
+// Thresholds are scaled to POINTS_PER_LIKE (100/250/500/1000/2000/4000
+// taps × 1.5 points/tap) so the number of taps needed to reach each rank
+// stays the same as it's been throughout every points-per-tap change.
 const RANKS = [
   { threshold: SCORE_FOR_MAX_SIZE, id: "bronze", label: "🥉", color: "#cd7f32", spikes: 14 },
-  { threshold: 2500, id: "silver", label: "🥈", color: "#c7ccd1", spikes: 16 },
-  { threshold: 5000, id: "gold", label: "🥇", color: "#ffd54a", spikes: 18 },
-  { threshold: 10000, id: "diamond", label: "💎", color: "#67e8f9", spikes: 20 },
-  { threshold: 20000, id: "ruby", label: "🔴", color: "#f43f5e", spikes: 22 },
-  { threshold: 40000, id: "crown", label: "👑", color: "#facc15", spikes: 26 },
+  { threshold: 375, id: "silver", label: "🥈", color: "#c7ccd1", spikes: 16 },
+  { threshold: 750, id: "gold", label: "🥇", color: "#ffd54a", spikes: 18 },
+  { threshold: 1500, id: "diamond", label: "💎", color: "#67e8f9", spikes: 20 },
+  { threshold: 3000, id: "ruby", label: "🔴", color: "#f43f5e", spikes: 22 },
+  { threshold: 6000, id: "crown", label: "👑", color: "#facc15", spikes: 26 },
 ];
 
 function getRank(score) {
@@ -68,18 +74,6 @@ function getRank(score) {
 function getBubbleRadius(score) {
   const ratio = Math.min(score / SCORE_FOR_MAX_SIZE, 1);
   return BUBBLE_MIN_RADIUS + (BUBBLE_MAX_RADIUS - BUBBLE_MIN_RADIUS) * ratio;
-}
-
-// Gift value -> "activated level" shown in the level-up toast. A separate,
-// simpler scale from the score-based rank above: this reflects the power
-// of the gift itself, not the gifter's accumulated arena score.
-function levelForCoinValue(coinValue) {
-  if (coinValue >= 1000) return 6;
-  if (coinValue >= 500) return 5;
-  if (coinValue >= 100) return 4;
-  if (coinValue >= 50) return 3;
-  if (coinValue >= 10) return 2;
-  return 1;
 }
 
 // TikTok's payloads have repeatedly shown numeric-looking fields arriving
@@ -100,6 +94,7 @@ class Player {
     this.score = 0;
     this.roundScore = 0;
     this.kills = 0;
+    this.attackLevel = 0; // gift "level" mode: +1 per coin, +1 collision damage per level
     this.eliminated = false;
     this.lastTapAt = 0; // drives the "tapping" activity flag below
     // random starting position inside arena circle
@@ -136,6 +131,7 @@ class Player {
       score: this.score,
       roundScore: this.roundScore,
       kills: this.kills,
+      attackLevel: this.attackLevel,
       x: this.x,
       y: this.y,
       radius: this.radius,
@@ -161,6 +157,8 @@ class GameEngine {
     this.roundNumber = 0;
     this.roundDurationMs = ROUND_DURATION_MS; // configurable via setConfig()
     this.totalRounds = 0; // 0 = unlimited (default); N = stop after round N
+    this.maxSpeed = MAX_SPEED; // configurable via setConfig()
+    this.giftMode = { level: true, shots: true }; // configurable via setConfig()
     this.events = []; // recent floating +/- events for the UI
     this.physicsTimer = null;
     this.roundTimer = null;
@@ -175,18 +173,33 @@ class GameEngine {
     this.activeBarrages = new Set();
   }
 
-  // Updates round duration / total-rounds-per-competition. Takes effect
-  // from the next round that starts — an in-progress round keeps running
-  // on its original deadline, so changing this mid-round never yanks the
-  // timer backward or forward under the host's feet.
-  setConfig({ roundDurationMs, totalRounds } = {}) {
+  // Updates round duration / total-rounds-per-competition / bubble speed /
+  // which gift effects are active. Round settings take effect from the
+  // next round that starts — an in-progress round keeps running on its
+  // original deadline, so changing this mid-round never yanks the timer
+  // backward or forward under the host's feet. Speed and gift-mode apply
+  // immediately (speed is read fresh every physics tick; gift mode is read
+  // fresh on every gift).
+  setConfig({ roundDurationMs, totalRounds, maxSpeed, giftMode } = {}) {
     if (typeof roundDurationMs === "number" && Number.isFinite(roundDurationMs) && roundDurationMs >= MIN_ROUND_DURATION_MS) {
       this.roundDurationMs = roundDurationMs;
     }
     if (typeof totalRounds === "number" && Number.isFinite(totalRounds) && totalRounds >= 0) {
       this.totalRounds = Math.floor(totalRounds);
     }
-    return { roundDurationMs: this.roundDurationMs, totalRounds: this.totalRounds };
+    if (typeof maxSpeed === "number" && Number.isFinite(maxSpeed)) {
+      this.maxSpeed = Math.min(MAX_SPEED_LIMIT, Math.max(MIN_SPEED_LIMIT, maxSpeed));
+    }
+    if (giftMode && typeof giftMode === "object") {
+      if (typeof giftMode.level === "boolean") this.giftMode.level = giftMode.level;
+      if (typeof giftMode.shots === "boolean") this.giftMode.shots = giftMode.shots;
+    }
+    return {
+      roundDurationMs: this.roundDurationMs,
+      totalRounds: this.totalRounds,
+      maxSpeed: this.maxSpeed,
+      giftMode: { ...this.giftMode },
+    };
   }
 
   // ---------- Round lifecycle ----------
@@ -214,6 +227,7 @@ class GameEngine {
     for (const p of this.players.values()) {
       p.roundScore = 0;
       p.kills = 0;
+      p.attackLevel = 0;
     }
     this.roundEndsAt = Date.now() + this.roundDurationMs;
     this.io.emit("round:start", {
@@ -342,12 +356,18 @@ class GameEngine {
     this._tryPromote(userId);
   }
 
-  // Gifts fire a sustained barrage of projectiles — not one shot — at
-  // whoever is the current top scorer (excluding the gifter), retargeted
-  // on every shot so a barrage that finishes off the leader keeps firing
-  // at the new one. Each shot deals the gift's full coin value in damage,
-  // for GIFT_SHOTS_PER_SECOND shots/sec over GIFT_BARRAGE_DURATION_MS.
-  // The "activated level" toast fires once, on the barrage's first shot.
+  // Gifts can trigger either or both configured effects (this.giftMode):
+  //  - level: +1 attackLevel per coin, permanently boosting this player's
+  //    collision damage for the rest of the round. Announced once via
+  //    gift:levelup.
+  //  - shots: a sustained barrage of projectiles — not one shot — at
+  //    whoever currently has the highest attackLevel among enemies,
+  //    retargeted on every shot so a barrage that finishes off the leader
+  //    keeps firing at the new one. Each shot deals the gift's full coin
+  //    value in damage, for GIFT_SHOTS_PER_SECOND shots/sec over
+  //    GIFT_BARRAGE_DURATION_MS.
+  // A gift still joins the gifter immediately if they weren't already in
+  // the arena, regardless of which mode(s) are active.
   handleGift(userId, nickname, profilePictureUrl, coinValue) {
     const coins = toPositiveInt(coinValue, 1);
     let attacker = this.players.get(userId);
@@ -362,53 +382,63 @@ class GameEngine {
       this.pendingJoins.delete(userId);
     }
     const attackerId = attacker.userId;
-    const level = levelForCoinValue(coins);
-    const totalShots = Math.round((GIFT_BARRAGE_DURATION_MS / 1000) * GIFT_SHOTS_PER_SECOND);
-    let shotsFired = 0;
 
-    const fireShot = () => {
-      const liveAttacker = this.players.get(attackerId);
-      if (!liveAttacker) return; // attacker left the arena mid-barrage; skip silently
-
-      let target = null;
-      for (const p of this.players.values()) {
-        if (p.userId === attackerId) continue;
-        if (!target || p.roundScore > target.roundScore) target = p;
-      }
-
-      let eliminated = false;
-      if (target) {
-        target.roundScore = Math.max(0, target.roundScore - coins);
-        this.pushEvent({ type: "hit", fromUserId: attackerId, toUserId: target.userId, amount: coins });
-        if (target.roundScore <= 0) {
-          this.eliminate(target, liveAttacker);
-          eliminated = true;
-        }
-      }
-
-      this.io.emit("gift:attack", {
-        from: { userId: liveAttacker.userId, nickname: liveAttacker.nickname, x: liveAttacker.x, y: liveAttacker.y },
-        to: target ? { userId: target.userId, nickname: target.nickname, x: target.x, y: target.y } : null,
-        amount: coins,
-        level,
-        eliminated,
-        showLevelToast: shotsFired === 0,
+    if (this.giftMode.level) {
+      attacker.attackLevel += coins;
+      this.io.emit("gift:levelup", {
+        from: { userId: attacker.userId, nickname: attacker.nickname },
+        attackLevel: attacker.attackLevel,
+        coins,
       });
-
       this.broadcastState();
-      shotsFired++;
-    };
+    }
 
-    fireShot();
-    const intervalId = setInterval(() => {
-      if (shotsFired >= totalShots) {
-        clearInterval(intervalId);
-        this.activeBarrages.delete(intervalId);
-        return;
-      }
+    if (this.giftMode.shots) {
+      const totalShots = Math.round((GIFT_BARRAGE_DURATION_MS / 1000) * GIFT_SHOTS_PER_SECOND);
+      let shotsFired = 0;
+
+      const fireShot = () => {
+        const liveAttacker = this.players.get(attackerId);
+        if (!liveAttacker) return; // attacker left the arena mid-barrage; skip silently
+
+        let target = null;
+        for (const p of this.players.values()) {
+          if (p.userId === attackerId) continue;
+          if (!target || p.attackLevel > target.attackLevel) target = p;
+        }
+
+        let eliminated = false;
+        if (target) {
+          target.roundScore = Math.max(0, target.roundScore - coins);
+          this.pushEvent({ type: "hit", fromUserId: attackerId, toUserId: target.userId, amount: coins });
+          if (target.roundScore <= 0) {
+            this.eliminate(target, liveAttacker);
+            eliminated = true;
+          }
+        }
+
+        this.io.emit("gift:attack", {
+          from: { userId: liveAttacker.userId, nickname: liveAttacker.nickname, x: liveAttacker.x, y: liveAttacker.y },
+          to: target ? { userId: target.userId, nickname: target.nickname, x: target.x, y: target.y } : null,
+          amount: coins,
+          eliminated,
+        });
+
+        this.broadcastState();
+        shotsFired++;
+      };
+
       fireShot();
-    }, 1000 / GIFT_SHOTS_PER_SECOND);
-    this.activeBarrages.add(intervalId);
+      const intervalId = setInterval(() => {
+        if (shotsFired >= totalShots) {
+          clearInterval(intervalId);
+          this.activeBarrages.delete(intervalId);
+          return;
+        }
+        fireShot();
+      }, 1000 / GIFT_SHOTS_PER_SECOND);
+      this.activeBarrages.add(intervalId);
+    }
   }
 
   eliminate(victim, killer) {
@@ -469,13 +499,16 @@ class GameEngine {
         p.vy -= 2 * dot * ny;
       }
 
-      // small random drift so bubbles keep moving
-      p.vx += (Math.random() - 0.5) * 8;
-      p.vy += (Math.random() - 0.5) * 8;
+      // small random drift so bubbles keep moving — scaled to the
+      // configured max speed so raising/lowering it actually changes how
+      // fast bubbles feel, not just a rarely-reached ceiling.
+      const drift = this.maxSpeed * 0.06;
+      p.vx += (Math.random() - 0.5) * drift;
+      p.vy += (Math.random() - 0.5) * drift;
       const speed = Math.hypot(p.vx, p.vy);
-      if (speed > MAX_SPEED) {
-        p.vx = (p.vx / speed) * MAX_SPEED;
-        p.vy = (p.vy / speed) * MAX_SPEED;
+      if (speed > this.maxSpeed) {
+        p.vx = (p.vx / speed) * this.maxSpeed;
+        p.vy = (p.vy / speed) * this.maxSpeed;
       }
     }
 
@@ -505,16 +538,19 @@ class GameEngine {
           [a.vx, b.vx] = [b.vx, a.vx];
           [a.vy, b.vy] = [b.vy, a.vy];
 
-          // damage exchange: each deals base damage to the other
+          // damage exchange: each deals base damage + their own attackLevel
+          // (from gift "level" mode) to the other
           if (!a._justCollided || a._justCollided < Date.now() - 300) {
-            b.roundScore = Math.max(0, b.roundScore - BASE_COLLISION_DAMAGE);
-            this.pushEvent({ type: "hit", fromUserId: a.userId, toUserId: b.userId, amount: BASE_COLLISION_DAMAGE });
+            const dmgAtoB = BASE_COLLISION_DAMAGE + a.attackLevel;
+            b.roundScore = Math.max(0, b.roundScore - dmgAtoB);
+            this.pushEvent({ type: "hit", fromUserId: a.userId, toUserId: b.userId, amount: dmgAtoB });
             a._justCollided = Date.now();
             if (b.roundScore <= 0) this.eliminate(b, a);
           }
           if (!b.eliminated && (!b._justCollided || b._justCollided < Date.now() - 300)) {
-            a.roundScore = Math.max(0, a.roundScore - BASE_COLLISION_DAMAGE);
-            this.pushEvent({ type: "hit", fromUserId: b.userId, toUserId: a.userId, amount: BASE_COLLISION_DAMAGE });
+            const dmgBtoA = BASE_COLLISION_DAMAGE + b.attackLevel;
+            a.roundScore = Math.max(0, a.roundScore - dmgBtoA);
+            this.pushEvent({ type: "hit", fromUserId: b.userId, toUserId: a.userId, amount: dmgBtoA });
             b._justCollided = Date.now();
             if (a.roundScore <= 0) this.eliminate(a, b);
           }
@@ -535,6 +571,8 @@ class GameEngine {
       roundEndsAt: this.roundEndsAt,
       roundDurationMs: this.roundDurationMs,
       totalRounds: this.totalRounds,
+      maxSpeed: this.maxSpeed,
+      giftMode: { ...this.giftMode },
       players,
       leaderboardHistory: this.leaderboardHistory,
     });
@@ -557,5 +595,8 @@ module.exports = {
   BASE_COLLISION_DAMAGE,
   GIFT_BARRAGE_DURATION_MS,
   GIFT_SHOTS_PER_SECOND,
+  MAX_SPEED,
+  MIN_SPEED_LIMIT,
+  MAX_SPEED_LIMIT,
   RANKS,
 };
