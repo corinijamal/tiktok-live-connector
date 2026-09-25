@@ -1,4 +1,4 @@
-const { GameEngine, JOIN_LIKE_THRESHOLD, POINTS_PER_LIKE, ACTIVE_TAP_WINDOW_MS, MIN_ROUND_DURATION_MS } = require("./server/gameEngine");
+const { GameEngine, JOIN_LIKE_THRESHOLD, POINTS_PER_LIKE, ACTIVE_TAP_WINDOW_MS, MIN_ROUND_DURATION_MS, MAX_SPEED, MIN_SPEED_LIMIT, MAX_SPEED_LIMIT, BASE_COLLISION_DAMAGE } = require("./server/gameEngine");
 
 const emitted = [];
 const fakeIo = { emit: (evt, data) => emitted.push([evt, data]) };
@@ -58,25 +58,37 @@ console.assert(ali.kills === 1, `Expected Ali to have 1 kill, got ${ali.kills}`)
 const elimEvents = emittedOfType("player:eliminated");
 console.assert(elimEvents.length === 1, "Expected exactly one player:eliminated event");
 const hitEvents = emittedOfType("event").filter(([, d]) => d.type === "hit");
-console.assert(hitEvents.some(([, d]) => d.amount === 10), `Expected a collision hit event dealing 10 damage (BASE_COLLISION_DAMAGE), got amounts: ${hitEvents.map(([, d]) => d.amount)}`);
-console.log("7) collision elimination -> Reem removed:", !engine.players.has("u3"), "| Ali kills:", ali.kills, "| hit amount: 10");
+console.assert(hitEvents.some(([, d]) => d.amount === BASE_COLLISION_DAMAGE), `Expected a collision hit event dealing ${BASE_COLLISION_DAMAGE} damage (BASE_COLLISION_DAMAGE), got amounts: ${hitEvents.map(([, d]) => d.amount)}`);
+console.log("7) collision elimination -> Reem removed:", !engine.players.has("u3"), "| Ali kills:", ali.kills, "| hit amount:", BASE_COLLISION_DAMAGE);
 engine.running = false;
 
-// ---- 8. Gift barrage: the first shot fires synchronously and immediately
-// targets the current top scorer ----
+// ---- 8. Gift dual-mode: "level" mode adds +1 attackLevel per coin and
+// announces via gift:levelup; "shots" mode targets whoever has the
+// HIGHEST ATTACK LEVEL among enemies — not highest score ----
 engine.handleLike("u4", "Omar", null, JOIN_LIKE_THRESHOLD);
 const omar = engine.players.get("u4");
-omar.roundScore = 500; // make Omar the top scorer (arbitrary test value)
+omar.roundScore = 500; // Omar has the highest SCORE...
+omar.attackLevel = 2; // ...but a low attack level
+
+engine.handleLike("u8", "Layla", null, JOIN_LIKE_THRESHOLD);
+const layla = engine.players.get("u8");
+layla.roundScore = 200; // Layla has a much lower score...
+layla.attackLevel = 40; // ...but the highest attack level -> should be the real target
+
 clearEmitted();
-engine.handleGift("u1", "Ali", null, 50); // Ali gifts -> should attack Omar (top scorer, not self)
+engine.handleGift("u1", "Ali", null, 50); // both giftMode.level and giftMode.shots are on by default
+
+const levelupEvents = emittedOfType("gift:levelup");
+console.assert(levelupEvents.length === 1, "Expected one gift:levelup event");
+console.assert(ali.attackLevel === 50, `Expected Ali's attackLevel to become 50 (1 per coin), got ${ali.attackLevel}`);
+console.assert(levelupEvents[0][1].attackLevel === 50, `Expected gift:levelup to report attackLevel 50, got ${levelupEvents[0][1].attackLevel}`);
+
 const giftEvents = emittedOfType("gift:attack");
-console.assert(giftEvents.length === 1, "Expected one gift:attack event");
+console.assert(giftEvents.length === 1, "Expected one gift:attack event (first shot fires synchronously)");
 const giftPayload = giftEvents[0][1];
-console.assert(giftPayload.to && giftPayload.to.userId === "u4", `Expected gift to target Omar (u4), got ${JSON.stringify(giftPayload.to)}`);
-console.assert(giftPayload.level === 3, `Expected level 3 for a 50-coin gift, got ${giftPayload.level}`);
-console.assert(giftPayload.showLevelToast === true, "Expected the first barrage shot to flag showLevelToast for the level-up toast");
-console.assert(omar.roundScore === 450, `Expected Omar's score to drop to 450 after 50 dmg, got ${omar.roundScore}`);
-console.log("8) gift attack -> target:", giftPayload.to.userId, "| level:", giftPayload.level, "| Omar score:", omar.roundScore);
+console.assert(giftPayload.to && giftPayload.to.userId === "u8", `Expected the shot to target Layla (highest attackLevel, not Omar's higher score), got ${JSON.stringify(giftPayload.to)}`);
+console.assert(layla.roundScore === 150, `Expected Layla's score to drop to 150 after 50 dmg, got ${layla.roundScore}`);
+console.log("8) gift level+shots -> Ali attackLevel:", ali.attackLevel, "| barrage targeted:", giftPayload.to.userId, "(highest attackLevel, not Omar's higher score)");
 
 // ---- 9. A gift from someone who already has partial tap progress but
 // hasn't joined yet must inherit that progress as their starting score ----
@@ -123,7 +135,62 @@ console.assert(cfgEngine.running === false, "Expected the engine to auto-stop af
 console.assert(cfgEngine.roundEndsAt === 0, "Expected roundEndsAt to be cleared once the competition auto-stops");
 console.log("12) setConfig + competition auto-stop after round", cfgEngine.roundNumber, "of 2 -> running:", cfgEngine.running);
 
-// ---- 13. Gift barrage keeps firing over time (not just once), and
+// ---- 13. setConfig: bubble speed and gift-mode toggles ----
+const speedEngine = new GameEngine(fakeIo);
+console.assert(speedEngine.maxSpeed === MAX_SPEED, `Expected default maxSpeed ${MAX_SPEED}, got ${speedEngine.maxSpeed}`);
+console.assert(speedEngine.giftMode.level === true && speedEngine.giftMode.shots === true, "Expected both gift modes on by default");
+const speedResult = speedEngine.setConfig({ maxSpeed: 300 });
+console.assert(speedResult.maxSpeed === 300, `Expected maxSpeed to update to 300, got ${speedResult.maxSpeed}`);
+speedEngine.setConfig({ maxSpeed: 99999 }); // above the safety ceiling -> should clamp, not reject
+console.assert(speedEngine.maxSpeed === MAX_SPEED_LIMIT, `Expected an over-ceiling maxSpeed to clamp to ${MAX_SPEED_LIMIT}, got ${speedEngine.maxSpeed}`);
+speedEngine.setConfig({ maxSpeed: 1 }); // below the safety floor -> should clamp, not reject
+console.assert(speedEngine.maxSpeed === MIN_SPEED_LIMIT, `Expected a below-floor maxSpeed to clamp to ${MIN_SPEED_LIMIT}, got ${speedEngine.maxSpeed}`);
+speedEngine.setConfig({ giftMode: { level: false } }); // partial update: only touches the given key
+console.assert(speedEngine.giftMode.level === false && speedEngine.giftMode.shots === true, `Expected only giftMode.level to change, got ${JSON.stringify(speedEngine.giftMode)}`);
+console.log("13) setConfig maxSpeed/giftMode -> maxSpeed:", speedEngine.maxSpeed, "giftMode:", JSON.stringify(speedEngine.giftMode));
+
+// ---- 14. giftMode gating: level-only gifts don't fire a barrage;
+// shots-only gifts don't touch attackLevel ----
+const modeEngine = new GameEngine(fakeIo);
+modeEngine.handleLike("m1", "Attacker", null, JOIN_LIKE_THRESHOLD);
+modeEngine.handleLike("m2", "Defender", null, JOIN_LIKE_THRESHOLD);
+const attackerM = modeEngine.players.get("m1");
+const defenderM = modeEngine.players.get("m2");
+
+modeEngine.setConfig({ giftMode: { level: true, shots: false } });
+modeEngine.handleGift("m1", "Attacker", null, 15);
+console.assert(attackerM.attackLevel === 15, `Expected level-only mode to still raise attackLevel, got ${attackerM.attackLevel}`);
+console.assert(modeEngine.activeBarrages.size === 0, "Expected level-only mode to fire NO barrage");
+
+modeEngine.setConfig({ giftMode: { level: false, shots: true } });
+const defenderScoreBefore = defenderM.roundScore;
+modeEngine.handleGift("m1", "Attacker", null, 5);
+console.assert(attackerM.attackLevel === 15, `Expected shots-only mode to leave attackLevel unchanged, got ${attackerM.attackLevel}`);
+console.assert(defenderM.roundScore === defenderScoreBefore - 5, `Expected the shots-only barrage's first shot to still deal damage, got ${defenderM.roundScore}`);
+modeEngine.stop(); // cancel the barrage this just started
+console.log("14) giftMode gating -> level-only kept attackLevel-only, shots-only kept the barrage-only:", true);
+
+// ---- 15. Collision damage scales with the attacker's attackLevel
+// (BASE_COLLISION_DAMAGE + attackLevel), not a flat amount ----
+const dmgEngine = new GameEngine(fakeIo);
+dmgEngine.handleLike("d1", "Leveled", null, JOIN_LIKE_THRESHOLD);
+dmgEngine.handleLike("d2", "Plain", null, JOIN_LIKE_THRESHOLD);
+const leveled = dmgEngine.players.get("d1");
+const plain = dmgEngine.players.get("d2");
+leveled.attackLevel = 25; // +25 collision damage on top of the base
+leveled.x = 0; leveled.y = 0; leveled.vx = 0; leveled.vy = 0;
+plain.x = 1; plain.y = 0; plain.vx = 0; plain.vy = 0;
+plain.roundScore = 1000; // enough cushion that the damage isn't clipped by the zero-floor
+const plainScoreBefore = plain.roundScore;
+dmgEngine.running = true;
+dmgEngine.tick();
+const expectedDmg = plainScoreBefore - plain.roundScore;
+const expectedTotal = BASE_COLLISION_DAMAGE + 25;
+console.assert(expectedDmg === expectedTotal, `Expected a leveled attacker (attackLevel 25) to deal ${expectedTotal} damage (${BASE_COLLISION_DAMAGE} base + 25), got ${expectedDmg}`);
+console.log("15) attackLevel-scaled collision damage:", expectedDmg, `(expected ${expectedTotal})`);
+dmgEngine.running = false;
+
+// ---- 16. Gift barrage keeps firing over time (not just once), and
 // stop()/resetPlayers() cancels it instead of leaving it running loose ----
 async function testBarrage() {
   engine.handleLike("u6", "Target", null, JOIN_LIKE_THRESHOLD);
@@ -142,11 +209,11 @@ async function testBarrage() {
   await new Promise((resolve) => setTimeout(resolve, 700));
   const totalDamageSoFar = scoreBeforeBarrage - target.roundScore;
   console.assert(totalDamageSoFar >= 40, `Expected at least 2 more shots (>=40 extra damage) to have landed after ~700ms, got total damage ${totalDamageSoFar}`);
-  console.log("13) gift barrage fires repeated shots -> total damage after ~700ms:", totalDamageSoFar);
+  console.log("16) gift barrage fires repeated shots -> total damage after ~700ms:", totalDamageSoFar);
 
   engine.stop();
   console.assert(engine.activeBarrages.size === 0, "Expected stop() to cancel any in-flight gift barrage");
-  console.log("14) stop() cancels an in-flight gift barrage:", engine.activeBarrages.size === 0);
+  console.log("17) stop() cancels an in-flight gift barrage:", engine.activeBarrages.size === 0);
 
   console.log("\nALL CHECKS RAN (see any 'Assertion failed' lines above for failures)");
 }
