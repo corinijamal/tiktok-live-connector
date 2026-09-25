@@ -452,6 +452,52 @@
   .winner-name { font-size: 24px; font-weight: 900; }
   .winner-score { font-family: 'Rajdhani', sans-serif; font-size: 16px; color: var(--lime); }
 
+  /* ---------- Custom confirm dialog (replaces the native browser confirm(),
+     which shows the raw hosting domain and can't be styled) ---------- */
+  .confirm-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(7, 5, 13, 0.75);
+    backdrop-filter: blur(6px);
+    z-index: 80;
+    padding: 20px;
+  }
+  .confirm-overlay.show { display: flex; }
+  .confirm-box {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
+    padding: 22px;
+    width: min(320px, 100%);
+    text-align: center;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+  .confirm-message {
+    font-size: 14px;
+    color: var(--ice);
+    margin-bottom: 18px;
+    line-height: 1.6;
+  }
+  .confirm-buttons { display: flex; gap: 10px; }
+  .confirm-buttons button {
+    flex: 1;
+    padding: 10px;
+    border-radius: 9px;
+    border: none;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: 'Tajawal', sans-serif;
+    font-size: 13px;
+    transition: transform 0.1s;
+  }
+  .confirm-buttons button:active { transform: scale(0.96); }
+  .confirm-cancel { background: transparent; color: var(--ice); border: 1px solid rgba(237,233,254,0.3) !important; }
+  .confirm-ok { background: var(--ember); color: white; }
+
   /* ---------- Admin panel (hidden by default, toggled) ---------- */
   .fab-toggle {
     position: absolute;
@@ -681,6 +727,16 @@
     <div class="winner-title" id="winnerTitle">🏆 الفائز بالجولة</div>
     <div class="winner-name" id="winnerName"></div>
     <div class="winner-score" id="winnerScore"></div>
+  </div>
+
+  <div class="confirm-overlay" id="confirmOverlay">
+    <div class="confirm-box">
+      <div class="confirm-message" id="confirmMessage"></div>
+      <div class="confirm-buttons">
+        <button class="confirm-cancel" id="confirmCancelBtn">إلغاء</button>
+        <button class="confirm-ok" id="confirmOkBtn">تأكيد</button>
+      </div>
+    </div>
   </div>
 
   <button class="fab-toggle" id="fabToggle" aria-label="لوحة التحكم">⚙️</button>
@@ -1136,8 +1192,32 @@ function stopGame() {
 }
 function resetGame() {
   getAudioCtx();
-  if (!confirm('هذا سيمسح كل اللاعبين من الساحة الحالية. متأكد؟')) return;
-  fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: SESSION_ID }) });
+  showConfirm('هذا سيمسح كل اللاعبين من الساحة الحالية. متأكد؟', () => {
+    fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: SESSION_ID }) });
+  });
+}
+
+// Custom in-app confirm dialog — the native browser confirm() displays the
+// raw hosting domain and can't be styled, which looks out of place over a
+// live stream overlay. Shows `message`, then calls `onConfirm` only if the
+// user picks the confirm button; picking cancel (or closing) does nothing.
+function showConfirm(message, onConfirm) {
+  const overlay = document.getElementById('confirmOverlay');
+  const okBtn = document.getElementById('confirmOkBtn');
+  const cancelBtn = document.getElementById('confirmCancelBtn');
+  document.getElementById('confirmMessage').textContent = message;
+  overlay.classList.add('show');
+
+  function cleanup() {
+    overlay.classList.remove('show');
+    okBtn.removeEventListener('click', onOk);
+    cancelBtn.removeEventListener('click', onCancel);
+  }
+  function onOk() { cleanup(); onConfirm(); }
+  function onCancel() { cleanup(); }
+
+  okBtn.addEventListener('click', onOk);
+  cancelBtn.addEventListener('click', onCancel);
 }
 
 function saveConfig() {
